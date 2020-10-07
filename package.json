@@ -1,0 +1,33 @@
+{
+  "name": "js-ipfs-fetch",
+  "version": "1.0.0",
+  "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
+  "main": "index.js",
+  "scripts": {
+    "test": "standard --fix && node test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RangerMauve/js-ipfs-fetch.git"
+  },
+  "keywords": [
+    "ipfs",
+    "fetch",
+    "browser",
+    "p2p"
+  ],
+  "author": "rangermauve <ranger@mauve.moe> (https://mauve.moe/)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/RangerMauve/js-ipfs-fetch/issues"
+  },
+  "homepage": "https://github.com/RangerMauve/js-ipfs-fetch#readme",
+  "dependencies": {
+    "make-fetch": "^2.1.1"
+  },
+  "devDependencies": {
+    "ipfs": "^0.50.2",
+    "standard": "^14.3.4",
+    "tape": "^5.0.1"
+  }
+}
