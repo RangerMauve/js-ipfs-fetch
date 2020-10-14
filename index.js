@@ -1,4 +1,7 @@
 const makeFetch = require('make-fetch')
+const parseRange = require('range-parser')
+
+const SUPPORTED_METHODS = ['GET', 'HEAD']
 
 module.exports = function makeIPFSFetch ({ ipfs }) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal }) => {
@@ -7,8 +10,24 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
     const headers = {}
 
+    headers.Allow = SUPPORTED_METHODS.join(', ')
+
     try {
-      if (method === 'GET') {
+      if (method === 'HEAD') {
+        if (pathname.endsWith('/')) {
+          await collect(ipfs.ls(ipfsPath, { signal }))
+        } else {
+          headers['Accept-Ranges'] = 'bytes'
+          const [file] = await collect(ipfs.get(ipfsPath, { signal, preload: false }))
+          const { size } = file
+          headers['Content-Length'] = `${size}`
+        }
+        return {
+          statusCode: 200,
+          headers,
+          data: intoAsyncIterable('')
+        }
+      } else if (method === 'GET') {
         if (pathname.endsWith('/')) {
           // Probably a directory
 
@@ -21,16 +40,16 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
             data = intoAsyncIterable(json)
           } else {
             const page = `
-        <!DOCTYPE html>
-        <title>${url}</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <h1>Index of ${pathname}</h1>
-        <ul>
-          <li><a href="../">../</a></li>${files.map((file) => `
-          <li><a href="${file}">./${file}</a></li>
-        `).join('')}
-        </ul>
-      `
+<!DOCTYPE html>
+<title>${url}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<h1>Index of ${pathname}</h1>
+<ul>
+  <li><a href="../">../</a></li>${files.map((file) => `
+  <li><a href="${file}">./${file}</a></li>
+`).join('')}
+</ul>
+`
             headers['Content-Type'] = 'text/html'
             data = page
           }
@@ -41,12 +60,39 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
             data: intoAsyncIterable(data)
           }
         } else {
-          // Probably a file
+          headers['Accept-Ranges'] = 'bytes'
 
-          return {
-            statusCode: 200,
-            headers,
-            data: ipfs.cat(ipfsPath)
+          // Probably a file
+          const isRanged = reqHeaders.Range || reqHeaders.range
+          const [{ size }] = await collect(ipfs.get(ipfsPath, { signal, preload: false }))
+
+          if (isRanged) {
+            const ranges = parseRange(size, isRanged)
+            if (ranges && ranges.length && ranges.type === 'bytes') {
+              const [{ start, end }] = ranges
+              const length = (end - start + 1)
+              headers['Content-Length'] = `${length}`
+              headers['Content-Range'] = `bytes ${start}-${end}/${size}`
+              return {
+                statusCode: 206,
+                headers,
+                data: ipfs.cat(ipfsPath, { signal, offset: start, length })
+              }
+            } else {
+              headers['Content-Length'] = `${size}`
+              return {
+                statusCode: 200,
+                headers,
+                data: ipfs.cat(ipfsPath, { signal })
+              }
+            }
+          } else {
+            headers['Content-Length'] = `${size}`
+            return {
+              statusCode: 200,
+              headers,
+              data: ipfs.cat(ipfsPath, { signal })
+            }
           }
         }
       } else {
@@ -57,12 +103,11 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         }
       }
     } catch (e) {
+      const statusCode = e.code === 'ERR_NOT_FOUND' ? 404 : 500
       return {
-        statusCode: 500,
-        headers: {
-          url
-        },
-        data: intoAsyncIterable(url)
+        statusCode,
+        headers,
+        data: intoAsyncIterable(e.stack)
       }
     }
   })

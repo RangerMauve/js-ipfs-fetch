@@ -4,7 +4,8 @@
   "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
   "main": "index.js",
   "scripts": {
-    "test": "standard --fix && node test"
+    "test": "standard --fix && node test",
+    "test-browser": "browserify -d ./test | browser-run"
   },
   "repository": {
     "type": "git",
@@ -23,9 +24,12 @@
   },
   "homepage": "https://github.com/RangerMauve/js-ipfs-fetch#readme",
   "dependencies": {
-    "make-fetch": "^2.1.1"
+    "make-fetch": "^2.1.2",
+    "range-parser": "^1.2.1"
   },
   "devDependencies": {
+    "browser-run": "^8.0.0",
+    "browserify": "^17.0.0",
     "ipfs": "^0.50.2",
     "standard": "^14.3.4",
     "tape": "^5.0.1"
