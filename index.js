@@ -1,10 +1,10 @@
 const makeFetch = require('make-fetch')
 const parseRange = require('range-parser')
 
-const SUPPORTED_METHODS = ['GET', 'HEAD']
+const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST']
 
 module.exports = function makeIPFSFetch ({ ipfs }) {
-  return makeFetch(async ({ url, headers: reqHeaders, method, signal }) => {
+  return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
     const { hostname, pathname } = new URL(url)
     const ipfsPath = hostname ? hostname + pathname : pathname.slice(1)
 
@@ -13,7 +13,22 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
     headers.Allow = SUPPORTED_METHODS.join(', ')
 
     try {
-      if (method === 'HEAD') {
+      if (method === 'POST') {
+        // Node.js and browsers handle pathnames differently for IPFS URLs
+        const path = (pathname && pathname.startsWith('///')) ? pathname.slice(2) : pathname
+        const { cid } = await ipfs.add({
+          path,
+          content: body
+        }, {
+          wrapWithDirectory: true
+        })
+        const addedURL = `ipfs://${cid}${path}`
+        return {
+          statusCode: 200,
+          headers,
+          data: intoAsyncIterable(addedURL)
+        }
+      } else if (method === 'HEAD') {
         if (pathname.endsWith('/')) {
           await collect(ipfs.ls(ipfsPath, { signal }))
         } else {

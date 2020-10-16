@@ -144,6 +144,39 @@ test('Load a directory listing via fetch', async (t) => {
   }
 })
 
+test('POST a file into IPFS', async (t) => {
+  var ipfs = null
+  try {
+    ipfs = await IPFS.create({ silent: true, offline: true })
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const response = await fetch('ipfs:///example.txt', {
+      method: 'post',
+      body: TEST_DATA
+    })
+
+    t.ok(response, 'Got a response object')
+    t.equal(response.status, 200, 'Got OK in response')
+
+    const cid = await response.text()
+
+    t.match(cid, /ipfs:\/\/\w+\/example.txt/, 'returned IPFS url with CID')
+  } catch (e) {
+    t.fail(e.message)
+  } finally {
+    t.end()
+
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch {
+      // Whatever
+    }
+  }
+})
+
 async function collect (iterable) {
   const results = []
   for await (const item of iterable) {
