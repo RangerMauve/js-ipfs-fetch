@@ -1,12 +1,12 @@
 const makeFetch = require('make-fetch')
 const parseRange = require('range-parser')
 
-const SUPPORTED_METHODS = ['GET', 'HEAD']
+const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUT']
 
 module.exports = function makeIPFSFetch ({ ipfs }) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal }) => {
-    const { hostname, pathname } = new URL(url)
-    const ipfsPath = hostname ? hostname + pathname : pathname.slice(1)
+    const { hostname, pathname, protocol, searchParams } = new URL(url)
+    let ipfsPath = hostname ? hostname + pathname : pathname.slice(1)
 
     const headers = {}
 
@@ -14,6 +14,9 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
     try {
       if (method === 'HEAD') {
+        if (protocol === 'ipns:') {
+          ipfsPath = await ipfs.resolve(`/ipns${ensureSlash(ipfsPath)}`, { signal })
+        }
         if (pathname.endsWith('/')) {
           await collect(ipfs.ls(ipfsPath, { signal }))
         } else {
@@ -30,6 +33,9 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       } else if (method === 'GET') {
         if (pathname.endsWith('/')) {
           // Probably a directory
+          if (protocol === 'ipns:') {
+            ipfsPath = await ipfs.resolve(`/ipns${ensureSlash(ipfsPath)}`, { signal })
+          }
 
           let data = null
 
@@ -60,6 +66,9 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
             data: intoAsyncIterable(data)
           }
         } else {
+          if (protocol === 'ipns:') {
+            ipfsPath = await ipfs.resolve(`/ipns${ensureSlash(ipfsPath)}`, { signal })
+          }
           headers['Accept-Ranges'] = 'bytes'
 
           // Probably a file
@@ -95,6 +104,16 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
             }
           }
         }
+      } else if (method === 'PUBLISH' && protocol === 'ipns:') {
+        const keyName = searchParams.name
+        const value = stripSlash(ipfsPath)
+        const { name } = await ipfs.name.publish(value, { name: keyName })
+        const nameURL = `ipns://${name.slice('/ipns/'.length)}`
+        return {
+          statusCode: 200,
+          headers,
+          body: intoAsyncIterable(nameURL)
+        }
       } else {
         return {
           statusCode: 405,
@@ -124,4 +143,14 @@ async function collect (iterable) {
   }
 
   return result
+}
+
+function ensureSlash (path) {
+  if (!path.startsWith('/')) return '/' + path
+  return path
+}
+
+function stripSlash (path) {
+  if (path.startsWith('/')) return path.slice(1)
+  return path
 }

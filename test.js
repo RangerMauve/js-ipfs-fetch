@@ -144,6 +144,27 @@ test('Load a directory listing via fetch', async (t) => {
   }
 })
 
+test('Publish and ressolve IPNS', async (t) => {
+  var ipfs = null
+  try {
+    ipfs = await IPFS.create({ silent: true, offline: true })
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+  } catch (e) {
+    t.fail(e.message)
+  } finally {
+    t.end()
+
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch {
+      // Whatever
+    }
+  }
+})
+
 async function collect (iterable) {
   const results = []
   for await (const item of iterable) {
