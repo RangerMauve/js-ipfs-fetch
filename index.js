@@ -5,7 +5,7 @@ const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUBLISH', 'POST']
 
 module.exports = function makeIPFSFetch ({ ipfs }) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
-    const { hostname, pathname, protocol, searchParams } = new URL(url)
+    const { hostname, pathname, protocol } = new URL(url)
     let ipfsPath = hostname ? hostname + pathname : pathname.slice(1)
 
     const headers = {}
@@ -120,9 +120,16 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           }
         }
       } else if (method === 'PUBLISH' && protocol === 'ipns:') {
-        const keyName = searchParams.name
-        const value = `/ipfs${ensureSlash(ipfsPath)}`
-        const { name } = await ipfs.name.publish(value, { name: keyName })
+        const keyName = stripSlash(ipfsPath)
+        const rawValue = await collectString(body)
+        const value = rawValue.replace(/^ipfs:\/\//, '/ipfs/').replace(/^ipns:\/\//, '/ipns/')
+
+        const keys = await ipfs.key.list({ signal })
+        if (!keys.some(({ name }) => name === keyName)) {
+          await ipfs.key.gen(keyName, { signal })
+        }
+
+        const { name } = await ipfs.name.publish(value, { name: keyName, signal })
 
         const nameURL = `ipns://${name.replace('/ipns/', '')}/`
         return {
@@ -161,7 +168,17 @@ async function collect (iterable) {
   return result
 }
 
+async function collectString (iterable) {
+  const items = await collect(iterable)
+
+  return items.map((item) => item.toString()).join('')
+}
+
 function ensureSlash (path) {
   if (!path.startsWith('/')) return '/' + path
   return path
+}
+
+function stripSlash (path) {
+  return path.replace(/^\/+/, '')
 }

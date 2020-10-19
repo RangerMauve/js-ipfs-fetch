@@ -199,9 +199,9 @@ test('Publish and ressolve IPNS', async (t) => {
     t.pass('Able to make create fetch instance')
 
     const dataURI = await (await fetch('ipfs:///example.txt', { method: 'post', body: TEST_DATA })).text()
-    const asIPNS = dataURI.replace(/^ipfs/, 'ipns').slice(0, -('example.txt'.length))
+    const folderURI = dataURI.slice(0, -('example.txt'.length))
 
-    const publishResponse = await fetch(asIPNS, { method: 'publish' })
+    const publishResponse = await fetch('ipns://example', { method: 'publish', body: folderURI })
 
     t.equal(publishResponse.status, 200, 'Got OK in response')
 
