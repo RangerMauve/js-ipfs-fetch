@@ -1,7 +1,7 @@
 const makeFetch = require('make-fetch')
 const parseRange = require('range-parser')
 
-const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUT', 'POST']
+const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUBLISH', 'POST']
 
 module.exports = function makeIPFSFetch ({ ipfs }) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
@@ -56,9 +56,9 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
           const stats = await collect(ipfs.ls(ipfsPath, { signal }))
           const files = stats.map(({ name, type }) => (type === 'dir') ? `${name}/` : name)
-          if (reqHeaders.Accept === 'application/json') {
+          if ((reqHeaders.Accept || reqHeaders.accept) === 'application/json') {
             const json = JSON.stringify(files, null, '\t')
-            data = intoAsyncIterable(json)
+            data = json
           } else {
             const page = `
 <!DOCTYPE html>
@@ -121,13 +121,14 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         }
       } else if (method === 'PUBLISH' && protocol === 'ipns:') {
         const keyName = searchParams.name
-        const value = stripSlash(ipfsPath)
+        const value = `/ipfs${ensureSlash(ipfsPath)}`
         const { name } = await ipfs.name.publish(value, { name: keyName })
-        const nameURL = `ipns://${name.slice('/ipns/'.length)}`
+
+        const nameURL = `ipns://${name.replace('/ipns/', '')}/`
         return {
           statusCode: 200,
           headers,
-          body: intoAsyncIterable(nameURL)
+          data: intoAsyncIterable(nameURL)
         }
       } else {
         return {
@@ -162,10 +163,5 @@ async function collect (iterable) {
 
 function ensureSlash (path) {
   if (!path.startsWith('/')) return '/' + path
-  return path
-}
-
-function stripSlash (path) {
-  if (path.startsWith('/')) return path.slice(1)
   return path
 }

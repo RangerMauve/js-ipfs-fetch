@@ -131,27 +131,18 @@ test('Load a directory listing via fetch', async (t) => {
     const text = await response.text()
 
     t.ok(text, 'Got directory listing')
-  } catch (e) {
-    t.fail(e.message)
-  } finally {
-    t.end()
 
-    try {
-      if (ipfs) await ipfs.stop()
-    } catch {
-      // Whatever
-    }
-  }
-})
+    const jsonResponse = await fetch(`ipfs://${cid}/`, {
+      headers: {
+        Accept: 'application/json'
+      }
+    })
 
-test('Publish and ressolve IPNS', async (t) => {
-  var ipfs = null
-  try {
-    ipfs = await IPFS.create({ silent: true, offline: true })
+    t.equal(jsonResponse.status, 200, 'Got OK in response')
 
-    const fetch = await makeIPFSFetch({ ipfs })
+    const files = await jsonResponse.json()
 
-    t.pass('Able to make create fetch instance')
+    t.deepEqual(files, ['example.txt', 'example2.txt'], 'Got files in JSON form')
   } catch (e) {
     t.fail(e.message)
   } finally {
@@ -185,6 +176,49 @@ test('POST a file into IPFS', async (t) => {
     const cid = await response.text()
 
     t.match(cid, /ipfs:\/\/\w+\/example.txt/, 'returned IPFS url with CID')
+  } catch (e) {
+    t.fail(e.message)
+  } finally {
+    t.end()
+
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch {
+      // Whatever
+    }
+  }
+})
+
+test('Publish and ressolve IPNS', async (t) => {
+  var ipfs = null
+  try {
+    ipfs = await IPFS.create({ silent: true, offline: true })
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const dataURI = await (await fetch('ipfs:///example.txt', { method: 'post', body: TEST_DATA })).text()
+    const asIPNS = dataURI.replace(/^ipfs/, 'ipns').slice(0, -('example.txt'.length))
+
+    const publishResponse = await fetch(asIPNS, { method: 'publish' })
+
+    t.equal(publishResponse.status, 200, 'Got OK in response')
+
+    const ipnsURI = await publishResponse.text()
+
+    t.ok(ipnsURI, 'Got resulting IPNS url')
+
+    const resolvedResponse = await fetch(ipnsURI, {
+      headers: {
+        Accept: 'application/json'
+      }
+    })
+
+    t.equal(resolvedResponse.status, 200, 'Got OK in response')
+
+    const files = await resolvedResponse.json()
+    t.deepEqual(files, ['example.txt'], 'resolved files')
   } catch (e) {
     t.fail(e.message)
   } finally {
