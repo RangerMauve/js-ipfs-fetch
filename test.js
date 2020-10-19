@@ -189,10 +189,10 @@ test('POST a file into IPFS', async (t) => {
   }
 })
 
-test('Publish and ressolve IPNS', async (t) => {
+test('Publish and resolve IPNS', async (t) => {
   var ipfs = null
   try {
-    ipfs = await IPFS.create({ silent: true, offline: true })
+    ipfs = await IPFS.create({ silent: true, offline: false })
 
     const fetch = await makeIPFSFetch({ ipfs })
 
@@ -218,7 +218,12 @@ test('Publish and ressolve IPNS', async (t) => {
     t.equal(resolvedResponse.status, 200, 'Got OK in response')
 
     const files = await resolvedResponse.json()
+
     t.deepEqual(files, ['example.txt'], 'resolved files')
+
+    const dnsResponse = await fetch('ipns://ipfs.io/index.html')
+
+    t.ok(dnsResponse.ok, 'Able to resolve ipfs.io')
   } catch (e) {
     t.fail(e.message)
   } finally {

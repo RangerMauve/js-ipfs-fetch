@@ -12,6 +12,15 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
     headers.Allow = SUPPORTED_METHODS.join(', ')
 
+    // Split out IPNS info and put it back together to resolve.
+    async function resolveIPNS () {
+      const segments = ensureSlash(ipfsPath).split(/\/+/)
+      const mainSegment = segments[1]
+      const toResolve = `/ipns${ensureSlash(mainSegment)}`
+      const resolved = await ipfs.resolve(toResolve, { signal })
+      ipfsPath = [resolved, ...segments.slice(2)].join('/')
+    }
+
     try {
       if (method === 'POST') {
         // Node.js and browsers handle pathnames differently for IPFS URLs
@@ -30,7 +39,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         }
       } else if (method === 'HEAD') {
         if (protocol === 'ipns:') {
-          ipfsPath = await ipfs.resolve(`/ipns${ensureSlash(ipfsPath)}`, { signal })
+          await resolveIPNS()
         }
         if (pathname.endsWith('/')) {
           await collect(ipfs.ls(ipfsPath, { signal }))
@@ -49,7 +58,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         if (pathname.endsWith('/')) {
           // Probably a directory
           if (protocol === 'ipns:') {
-            ipfsPath = await ipfs.resolve(`/ipns${ensureSlash(ipfsPath)}`, { signal })
+            await resolveIPNS()
           }
 
           let data = null
@@ -82,7 +91,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           }
         } else {
           if (protocol === 'ipns:') {
-            ipfsPath = await ipfs.resolve(`/ipns${ensureSlash(ipfsPath)}`, { signal })
+            await resolveIPNS()
           }
           headers['Accept-Ranges'] = 'bytes'
 
