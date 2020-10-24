@@ -169,7 +169,8 @@ test('Resolve index.html from a directory', async (t) => {
     t.pass('Able to make create fetch instance')
 
     const results = await collect(ipfs.addAll([
-      { path: '/index.html', content: TEST_DATA }
+      { path: '/index.html', content: TEST_DATA },
+      { path: 'example/index.html', content: TEST_DATA }
     ], { wrapWithDirectory: true }))
 
     // The last element should be the directory itself
@@ -195,7 +196,16 @@ test('Resolve index.html from a directory', async (t) => {
 
     const files = await rawResponse.json()
 
-    t.deepEqual(files, ['index.html'], 'Got files in JSON form')
+    t.deepEqual(files, ['example/', 'index.html'], 'Got files in JSON form')
+
+    const subfolderResponse = await fetch(`ipfs://${cid}/example`)
+
+    t.ok(subfolderResponse, 'Got a response object')
+    t.equal(subfolderResponse.status, 200, 'Got OK in response')
+
+    const text2 = await subfolderResponse.text()
+
+    t.equal(text2, TEST_DATA, 'Got index from directory')
   } catch (e) {
     t.fail(e.message)
   } finally {

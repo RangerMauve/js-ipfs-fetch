@@ -4,6 +4,15 @@ const mime = require('mime/lite')
 
 const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUBLISH', 'POST']
 
+function makePotentialPaths (path) {
+  return [
+  `${path}`,
+  `${path}/index.html`,
+  `${path}index.html`,
+  `${path}.html`
+  ]
+}
+
 module.exports = function makeIPFSFetch ({ ipfs }) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
     const { hostname, pathname, protocol } = new URL(url)
@@ -22,16 +31,33 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       ipfsPath = [resolved, ...segments.slice(2)].join('/')
     }
 
+    async function getFile (path) {
+      let firstErr = null
+      for (const toTry of makePotentialPaths(path)) {
+        try {
+          const files = await collect(ipfs.get(toTry, { signal, preload: false }))
+
+          // It's probably a directory, but we need a single file
+          if (files.length > 1) continue
+
+          const [file] = files
+          return { file, path: toTry }
+        } catch (e) {
+          firstErr = firstErr || e
+        }
+      }
+      throw firstErr
+    }
+
     async function serveFile () {
       headers['Accept-Ranges'] = 'bytes'
 
       // Probably a file
       const isRanged = reqHeaders.Range || reqHeaders.range
-      const [{ size }] = await collect(ipfs.get(ipfsPath, { signal, preload: false }))
+      const { file, path } = await getFile(ipfsPath)
+      const { size } = file
 
-      let mimeType = mime.getType(ipfsPath) || 'text/plain'
-      if (mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
-      headers['Content-Type'] = mimeType
+      headers['Content-Type'] = getMimeType(path)
 
       if (isRanged) {
         const ranges = parseRange(size, isRanged)
@@ -43,14 +69,14 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           return {
             statusCode: 206,
             headers,
-            data: ipfs.cat(ipfsPath, { signal, offset: start, length })
+            data: ipfs.cat(path, { signal, offset: start, length })
           }
         } else {
           headers['Content-Length'] = `${size}`
           return {
             statusCode: 200,
             headers,
-            data: ipfs.cat(ipfsPath, { signal })
+            data: ipfs.cat(path, { signal })
           }
         }
       } else {
@@ -58,7 +84,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         return {
           statusCode: 200,
           headers,
-          data: ipfs.cat(ipfsPath, { signal })
+          data: ipfs.cat(path, { signal })
         }
       }
     }
@@ -87,8 +113,9 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           await collect(ipfs.ls(ipfsPath, { signal }))
         } else {
           headers['Accept-Ranges'] = 'bytes'
-          const [file] = await collect(ipfs.get(ipfsPath, { signal, preload: false }))
+          const { file, path } = await getFile(ipfsPath)
           const { size } = file
+          headers['Content-Type'] = getMimeType(path)
           headers['Content-Length'] = `${size}`
         }
         return {
@@ -208,4 +235,10 @@ function ensureSlash (path) {
 
 function stripSlash (path) {
   return path.replace(/^\/+/, '')
+}
+
+function getMimeType (path) {
+  let mimeType = mime.getType(path) || 'text/plain'
+  if (mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
+  return mimeType
 }
