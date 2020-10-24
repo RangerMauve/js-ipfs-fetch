@@ -27,6 +27,9 @@ test('Load a file via fetch', async (t) => {
     t.ok(response, 'Got a response object')
     t.equal(response.status, 200, 'Got OK in response')
 
+    const contentType = response.headers.get('Content-Type')
+    t.equal(contentType, 'text/plain; charset=utf-8', 'Got expected content type')
+
     const text = await response.text()
 
     t.equal(text, TEST_DATA, 'Got expected file content')
@@ -143,6 +146,56 @@ test('Load a directory listing via fetch', async (t) => {
     const files = await jsonResponse.json()
 
     t.deepEqual(files, ['example.txt', 'example2.txt'], 'Got files in JSON form')
+  } catch (e) {
+    t.fail(e.message)
+  } finally {
+    t.end()
+
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch {
+      // Whatever
+    }
+  }
+})
+
+test('Resolve index.html from a directory', async (t) => {
+  var ipfs = null
+  try {
+    ipfs = await IPFS.create({ silent: true, offline: true })
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const results = await collect(ipfs.addAll([
+      { path: '/index.html', content: TEST_DATA }
+    ], { wrapWithDirectory: true }))
+
+    // The last element should be the directory itself
+    const { cid } = results[results.length - 1]
+
+    const response = await fetch(`ipfs://${cid}/`)
+
+    t.ok(response, 'Got a response object')
+    t.equal(response.status, 200, 'Got OK in response')
+
+    const text = await response.text()
+
+    t.equal(text, TEST_DATA, 'Got index from directory')
+
+    const rawResponse = await fetch(`ipfs://${cid}/`, {
+      headers: {
+        'X-Resolve': 'none',
+        Accept: 'application/json'
+      }
+    })
+
+    t.equal(rawResponse.status, 200, 'Got OK in response')
+
+    const files = await rawResponse.json()
+
+    t.deepEqual(files, ['index.html'], 'Got files in JSON form')
   } catch (e) {
     t.fail(e.message)
   } finally {

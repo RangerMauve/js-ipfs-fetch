@@ -1,5 +1,6 @@
 const makeFetch = require('make-fetch')
 const parseRange = require('range-parser')
+const mime = require('mime/lite')
 
 const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUBLISH', 'POST']
 
@@ -19,6 +20,47 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       const toResolve = `/ipns${ensureSlash(mainSegment)}`
       const resolved = await ipfs.resolve(toResolve, { signal })
       ipfsPath = [resolved, ...segments.slice(2)].join('/')
+    }
+
+    async function serveFile () {
+      headers['Accept-Ranges'] = 'bytes'
+
+      // Probably a file
+      const isRanged = reqHeaders.Range || reqHeaders.range
+      const [{ size }] = await collect(ipfs.get(ipfsPath, { signal, preload: false }))
+
+      let mimeType = mime.getType(ipfsPath) || 'text/plain'
+      if (mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
+      headers['Content-Type'] = mimeType
+
+      if (isRanged) {
+        const ranges = parseRange(size, isRanged)
+        if (ranges && ranges.length && ranges.type === 'bytes') {
+          const [{ start, end }] = ranges
+          const length = (end - start + 1)
+          headers['Content-Length'] = `${length}`
+          headers['Content-Range'] = `bytes ${start}-${end}/${size}`
+          return {
+            statusCode: 206,
+            headers,
+            data: ipfs.cat(ipfsPath, { signal, offset: start, length })
+          }
+        } else {
+          headers['Content-Length'] = `${size}`
+          return {
+            statusCode: 200,
+            headers,
+            data: ipfs.cat(ipfsPath, { signal })
+          }
+        }
+      } else {
+        headers['Content-Length'] = `${size}`
+        return {
+          statusCode: 200,
+          headers,
+          data: ipfs.cat(ipfsPath, { signal })
+        }
+      }
     }
 
     try {
@@ -65,8 +107,17 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
           const stats = await collect(ipfs.ls(ipfsPath, { signal }))
           const files = stats.map(({ name, type }) => (type === 'dir') ? `${name}/` : name)
+
+          if (files.includes('index.html')) {
+            const resolveStrategy = reqHeaders['X-Resolve'] || reqHeaders['x-resolve']
+            if (resolveStrategy !== 'none') {
+              ipfsPath += 'index.html'
+              return serveFile()
+            }
+          }
           if ((reqHeaders.Accept || reqHeaders.accept) === 'application/json') {
             const json = JSON.stringify(files, null, '\t')
+            headers['Content-Type'] = 'application/json; charset=utf-8'
             data = json
           } else {
             const page = `
@@ -80,7 +131,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 `).join('')}
 </ul>
 `
-            headers['Content-Type'] = 'text/html'
+            headers['Content-Type'] = 'text/html; charset=utf-8'
             data = page
           }
 
@@ -93,40 +144,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           if (protocol === 'ipns:') {
             await resolveIPNS()
           }
-          headers['Accept-Ranges'] = 'bytes'
-
-          // Probably a file
-          const isRanged = reqHeaders.Range || reqHeaders.range
-          const [{ size }] = await collect(ipfs.get(ipfsPath, { signal, preload: false }))
-
-          if (isRanged) {
-            const ranges = parseRange(size, isRanged)
-            if (ranges && ranges.length && ranges.type === 'bytes') {
-              const [{ start, end }] = ranges
-              const length = (end - start + 1)
-              headers['Content-Length'] = `${length}`
-              headers['Content-Range'] = `bytes ${start}-${end}/${size}`
-              return {
-                statusCode: 206,
-                headers,
-                data: ipfs.cat(ipfsPath, { signal, offset: start, length })
-              }
-            } else {
-              headers['Content-Length'] = `${size}`
-              return {
-                statusCode: 200,
-                headers,
-                data: ipfs.cat(ipfsPath, { signal })
-              }
-            }
-          } else {
-            headers['Content-Length'] = `${size}`
-            return {
-              statusCode: 200,
-              headers,
-              data: ipfs.cat(ipfsPath, { signal })
-            }
-          }
+          return serveFile()
         }
       } else if (method === 'PUBLISH' && protocol === 'ipns:') {
         const keyName = stripSlash(ipfsPath)

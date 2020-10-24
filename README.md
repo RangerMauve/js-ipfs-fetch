@@ -42,6 +42,12 @@ Hyperlinks to files/folders will be automatically generated as relative URLs.
 
 Links will have a trailing slash for folders.
 
+If the folder contains an `index.html` it will be served as a file instead of performing a directory listing.
+
+### `await fetch('ipfs://CID/example/', {headers: {'X-Resolve': none}})`
+
+If you specify the `X-Resolve: none` header in your request, the resolution of `index.html` will be ignored and a directory listing will always be performed.
+
 ### `await fetch('ipfs://CID/example/', {headers: {Accept: 'application/json'}})`
 
 If you specify a URL for a folder, and set the `Accept` header to only contain `application/json`, the directory will be enumerated and the list of files/folders will be returned as a JSON array.
