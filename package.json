@@ -24,7 +24,7 @@
   },
   "homepage": "https://github.com/RangerMauve/js-ipfs-fetch#readme",
   "dependencies": {
-    "make-fetch": "^2.1.2",
+    "make-fetch": "^2.2.1",
     "mime": "^2.4.6",
     "range-parser": "^1.2.1"
   },
