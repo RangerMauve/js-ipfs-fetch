@@ -1,6 +1,7 @@
 const makeFetch = require('make-fetch')
 const parseRange = require('range-parser')
 const mime = require('mime/lite')
+const CID = require('cids')
 
 const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUBLISH', 'POST']
 
@@ -99,7 +100,8 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         }, {
           wrapWithDirectory: true
         })
-        const addedURL = `ipfs://${cid}${path}`
+        const cidHash = cidToString(cid)
+        const addedURL = `ipfs://${cidHash}${path}`
         return {
           statusCode: 200,
           headers,
@@ -184,8 +186,10 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         }
 
         const { name } = await ipfs.name.publish(value, { name: keyName, signal })
+        const nameHash = cidToString(new CID(name))
+        console.log('Publishing', nameHash)
 
-        const nameURL = `ipns://${name.replace('/ipns/', '')}/`
+        const nameURL = `ipns://${nameHash}/`
         return {
           statusCode: 200,
           headers,
@@ -234,11 +238,15 @@ function ensureSlash (path) {
 }
 
 function stripSlash (path) {
-  return path.replace(/^\/+/, '')
+  return path.replace(/\/+/, '')
 }
 
 function getMimeType (path) {
   let mimeType = mime.getType(path) || 'text/plain'
   if (mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
   return mimeType
+}
+
+function cidToString (cid) {
+  return cid.toV1().toString('base36')
 }
