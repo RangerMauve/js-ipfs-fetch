@@ -1,6 +1,6 @@
 {
   "name": "js-ipfs-fetch",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
   "main": "index.js",
   "scripts": {
