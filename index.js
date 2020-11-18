@@ -187,7 +187,6 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
         const { name } = await ipfs.name.publish(value, { name: keyName, signal })
         const nameHash = cidToString(new CID(name))
-        console.log('Publishing', nameHash)
 
         const nameURL = `ipns://${nameHash}/`
         return {

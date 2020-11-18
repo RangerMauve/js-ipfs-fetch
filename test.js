@@ -239,6 +239,13 @@ test('POST a file into IPFS', async (t) => {
     const cid = await response.text()
 
     t.match(cid, /ipfs:\/\/\w+\/example.txt/, 'returned IPFS url with CID')
+
+    const fileResponse = await fetch(cid)
+    t.equal(fileResponse.status, 200, 'Got OK in response')
+
+    const text = await fileResponse.text()
+
+    t.equal(text, TEST_DATA, 'Able to load POSTed file')
   } catch (e) {
     t.fail(e.message)
   } finally {
