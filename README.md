@@ -1,6 +1,9 @@
 # js-ipfs-fetch
 Use the same `fetch()` API browsers provide for HTTP, but for IPFS
 
+
+**Watch the intro video: [here](https://youtu.be/kI9Issf3MNc?t=1606)**
+
 ## Example
 
 ```javascript
