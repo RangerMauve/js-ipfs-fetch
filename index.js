@@ -93,7 +93,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
     try {
       if (method === 'POST') {
         // Node.js and browsers handle pathnames differently for IPFS URLs
-        const path = (pathname && pathname.startsWith('///')) ? pathname.slice(2) : pathname
+        const path = ensureSlash(stripLeadingSlash(ipfsPath))
         const { cid } = await ipfs.add({
           path,
           content: body
@@ -233,6 +233,11 @@ async function collectString (iterable) {
 
 function ensureSlash (path) {
   if (!path.startsWith('/')) return '/' + path
+  return path
+}
+
+function stripLeadingSlash (path) {
+  if (path.endsWith('/')) return path.slice(0, -1)
   return path
 }
 
