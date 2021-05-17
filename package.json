@@ -32,7 +32,7 @@
   "devDependencies": {
     "browser-run": "^8.0.0",
     "browserify": "^17.0.0",
-    "ipfs": "^0.50.2",
+    "ipfs-core": "^0.6.1",
     "standard": "^14.3.4",
     "tape": "^5.0.1"
   }

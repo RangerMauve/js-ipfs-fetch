@@ -98,9 +98,10 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           path,
           content: body
         }, {
+          cidVersion: 1,
           wrapWithDirectory: true
         })
-        const cidHash = cidToString(cid)
+        const cidHash = cid.toString()
         const addedURL = `ipfs://${cidHash}${path}`
         return {
           statusCode: 200,
@@ -186,7 +187,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         }
 
         const { name } = await ipfs.name.publish(value, { name: keyName, signal })
-        const nameHash = cidToString(new CID(name))
+        const nameHash = new CID(name).toV1().toString('base36')
 
         const nameURL = `ipns://${nameHash}/`
         return {
@@ -249,8 +250,4 @@ function getMimeType (path) {
   let mimeType = mime.getType(path) || 'text/plain'
   if (mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
   return mimeType
-}
-
-function cidToString (cid) {
-  return cid.toV1().toString('base36')
 }
