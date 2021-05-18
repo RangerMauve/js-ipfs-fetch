@@ -1,7 +1,7 @@
 global.Buffer = Buffer
 
 const test = require('tape')
-const IPFS = require('ipfs')
+const IPFS = require('ipfs-core')
 const makeIPFSFetch = require('./')
 
 const TEST_DATA = 'Hello World!'
@@ -20,7 +20,7 @@ test('Load a file via fetch', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const { cid } = await ipfs.add(TEST_DATA)
+    const { cid } = await ipfs.add(TEST_DATA, { cidVersion: 1 })
 
     const response = await fetch(`ipfs://${cid}`)
 
@@ -55,7 +55,7 @@ test('Load a range from a file', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const { cid } = await ipfs.add(TEST_DATA)
+    const { cid } = await ipfs.add(TEST_DATA, { cidVersion: 1 })
 
     const response = await fetch(`ipfs://${cid}`, { headers: { Range: 'bytes=0-4' } })
 
@@ -87,7 +87,7 @@ test('Get expected headers from HEAD', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const { cid } = await ipfs.add(TEST_DATA)
+    const { cid } = await ipfs.add(TEST_DATA, { cidVersion: 1 })
 
     const response = await fetch(`ipfs://${cid}`, { method: 'head' })
 
@@ -171,7 +171,7 @@ test('Resolve index.html from a directory', async (t) => {
     const results = await collect(ipfs.addAll([
       { path: '/index.html', content: TEST_DATA },
       { path: 'example/index.html', content: TEST_DATA }
-    ], { wrapWithDirectory: true }))
+    ], { wrapWithDirectory: true, cidVersion: 1 }))
 
     // The last element should be the directory itself
     const { cid } = results[results.length - 1]
@@ -236,16 +236,23 @@ test('POST a file into IPFS', async (t) => {
     t.ok(response, 'Got a response object')
     t.equal(response.status, 200, 'Got OK in response')
 
-    const cid = await response.text()
+    const ipfsUri = await response.text()
+    t.match(ipfsUri, /ipfs:\/\/\w+\/example.txt/, 'returned IPFS url with CID')
 
-    t.match(cid, /ipfs:\/\/\w+\/example.txt/, 'returned IPFS url with CID')
-
-    const fileResponse = await fetch(cid)
+    const fileResponse = await fetch(ipfsUri)
     t.equal(fileResponse.status, 200, 'Got OK in response')
 
     const text = await fileResponse.text()
-
     t.equal(text, TEST_DATA, 'Able to load POSTed file')
+
+    const { cid } = await ipfs.add({
+      path: 'example.txt',
+      content: TEST_DATA
+    }, {
+      cidVersion: 1,
+      wrapWithDirectory: true
+    })
+    t.equal(ipfsUri.match(/ipfs:\/\/([^/]+)/)[1], cid.toString('base32'), 'Matches cid from ipfs.add')
   } catch (e) {
     t.fail(e.message)
   } finally {
@@ -277,7 +284,8 @@ test('Publish and resolve IPNS', async (t) => {
 
     const ipnsURI = await publishResponse.text()
 
-    t.ok(ipnsURI, 'Got resulting IPNS url')
+    // base36 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
 
     const resolvedResponse = await fetch(ipnsURI, {
       headers: {
