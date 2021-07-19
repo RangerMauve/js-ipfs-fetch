@@ -2,6 +2,7 @@ global.Buffer = Buffer
 
 const test = require('tape')
 const IPFS = require('ipfs-core')
+const path = require('path')
 const makeIPFSFetch = require('./')
 
 const TEST_DATA = 'Hello World!'
@@ -11,18 +12,31 @@ test.onFinish(() => {
   if ((typeof window !== 'undefined') && window.close) window.close()
 })
 
+function getInstance () {
+  return IPFS.create({
+    silent: true,
+    offline: true,
+    repo: path.join(__dirname, '.test-repo')
+  })
+}
+
 test('Load a file via fetch', async (t) => {
-  var ipfs = null
+  let ipfs = null
   try {
-    ipfs = await IPFS.create({ silent: true, offline: true })
+    ipfs = await getInstance()
 
     const fetch = await makeIPFSFetch({ ipfs })
 
     t.pass('Able to make create fetch instance')
 
-    const { cid } = await ipfs.add(TEST_DATA, { cidVersion: 1 })
+    const results = await collect(ipfs.addAll([
+      { path: '/example.txt', content: TEST_DATA }
+    ], { wrapWithDirectory: true }))
 
-    const response = await fetch(`ipfs://${cid}`)
+    // The last element should be the directory itself
+    const { cid } = results[results.length - 1]
+
+    const response = await fetch(`ipfs://${cid}/example.txt`)
 
     t.ok(response, 'Got a response object')
     t.equal(response.status, 200, 'Got OK in response')
@@ -33,23 +47,52 @@ test('Load a file via fetch', async (t) => {
     const text = await response.text()
 
     t.equal(text, TEST_DATA, 'Got expected file content')
-  } catch (e) {
-    t.fail(e.message)
   } finally {
-    t.end()
-
     try {
       if (ipfs) await ipfs.stop()
-    } catch {
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('Load a file from just the CID', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const { cid } = await ipfs.add(TEST_DATA, { cidVersion: 1 })
+
+    const response = await fetch(`ipfs://${cid}/`)
+
+    t.ok(response, 'Got a response object')
+    t.equal(response.status, 200, 'Got OK in response')
+
+    const contentType = response.headers.get('Content-Type')
+    t.equal(contentType, 'text/plain; charset=utf-8', 'Got expected content type')
+
+    const text = await response.text()
+
+    t.equal(text, TEST_DATA, 'Got expected file content')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
       // Whatever
     }
   }
 })
 
 test('Load a range from a file', async (t) => {
-  var ipfs = null
+  let ipfs = null
   try {
-    ipfs = await IPFS.create({ silent: true, offline: true })
+    ipfs = await getInstance()
 
     const fetch = await makeIPFSFetch({ ipfs })
 
@@ -65,23 +108,20 @@ test('Load a range from a file', async (t) => {
     const text = await response.text()
 
     t.equal(text, TEST_DATA.slice(0, 5), 'Got expected file content')
-  } catch (e) {
-    t.fail(e.message)
   } finally {
-    t.end()
-
     try {
       if (ipfs) await ipfs.stop()
-    } catch {
+    } catch (e) {
+      console.error('Could not stop', e)
       // Whatever
     }
   }
 })
 
 test('Get expected headers from HEAD', async (t) => {
-  var ipfs = null
+  let ipfs = null
   try {
-    ipfs = await IPFS.create({ silent: true, offline: true })
+    ipfs = await getInstance()
 
     const fetch = await makeIPFSFetch({ ipfs })
 
@@ -96,23 +136,20 @@ test('Get expected headers from HEAD', async (t) => {
 
     const size = response.headers.get('Content-Length')
     t.equal(size, TEST_DATA.length.toString(), 'Got expected content length')
-  } catch (e) {
-    t.fail(e.message)
   } finally {
-    t.end()
-
     try {
       if (ipfs) await ipfs.stop()
-    } catch {
+    } catch (e) {
+      console.error('Could not stop', e)
       // Whatever
     }
   }
 })
 
 test('Load a directory listing via fetch', async (t) => {
-  var ipfs = null
+  let ipfs = null
   try {
-    ipfs = await IPFS.create({ silent: true, offline: true })
+    ipfs = await getInstance()
 
     const fetch = await makeIPFSFetch({ ipfs })
 
@@ -126,7 +163,11 @@ test('Load a directory listing via fetch', async (t) => {
     // The last element should be the directory itself
     const { cid } = results[results.length - 1]
 
-    const response = await fetch(`ipfs://${cid}/`)
+    const response = await fetch(`ipfs://${cid}/`, {
+      headers: {
+        Accept: 'text/html'
+      }
+    })
 
     t.ok(response, 'Got a response object')
     t.equal(response.status, 200, 'Got OK in response')
@@ -134,35 +175,30 @@ test('Load a directory listing via fetch', async (t) => {
     const text = await response.text()
 
     t.ok(text, 'Got directory listing')
+    t.ok(text.includes('example.txt'), 'Listing has first file')
+    t.ok(text.includes('example2.txt'), 'Listing has second file')
 
-    const jsonResponse = await fetch(`ipfs://${cid}/`, {
-      headers: {
-        Accept: 'application/json'
-      }
-    })
+    const jsonResponse = await fetch(`ipfs://${cid}/`)
 
     t.equal(jsonResponse.status, 200, 'Got OK in response')
 
     const files = await jsonResponse.json()
 
     t.deepEqual(files, ['example.txt', 'example2.txt'], 'Got files in JSON form')
-  } catch (e) {
-    t.fail(e.message)
   } finally {
-    t.end()
-
     try {
       if (ipfs) await ipfs.stop()
-    } catch {
+    } catch (e) {
+      console.error('Could not stop', e)
       // Whatever
     }
   }
 })
 
 test('Resolve index.html from a directory', async (t) => {
-  var ipfs = null
+  let ipfs = null
   try {
-    ipfs = await IPFS.create({ silent: true, offline: true })
+    ipfs = await getInstance()
 
     const fetch = await makeIPFSFetch({ ipfs })
 
@@ -185,12 +221,7 @@ test('Resolve index.html from a directory', async (t) => {
 
     t.equal(text, TEST_DATA, 'Got index from directory')
 
-    const rawResponse = await fetch(`ipfs://${cid}/`, {
-      headers: {
-        'X-Resolve': 'none',
-        Accept: 'application/json'
-      }
-    })
+    const rawResponse = await fetch(`ipfs://${cid}/?noResolve`)
 
     t.equal(rawResponse.status, 200, 'Got OK in response')
 
@@ -206,23 +237,20 @@ test('Resolve index.html from a directory', async (t) => {
     const text2 = await subfolderResponse.text()
 
     t.equal(text2, TEST_DATA, 'Got index from directory')
-  } catch (e) {
-    t.fail(e.message)
   } finally {
-    t.end()
-
     try {
       if (ipfs) await ipfs.stop()
-    } catch {
+    } catch (e) {
+      console.error('Could not stop', e)
       // Whatever
     }
   }
 })
 
 test('POST a file into IPFS', async (t) => {
-  var ipfs = null
+  let ipfs = null
   try {
-    ipfs = await IPFS.create({ silent: true, offline: true })
+    ipfs = await getInstance()
 
     const fetch = await makeIPFSFetch({ ipfs })
 
@@ -253,23 +281,20 @@ test('POST a file into IPFS', async (t) => {
       wrapWithDirectory: true
     })
     t.equal(ipfsUri.match(/ipfs:\/\/([^/]+)/)[1], cid.toString('base32'), 'Matches cid from ipfs.add')
-  } catch (e) {
-    t.fail(e.message)
   } finally {
-    t.end()
-
     try {
       if (ipfs) await ipfs.stop()
-    } catch {
+    } catch (e) {
+      console.error('Could not stop', e)
       // Whatever
     }
   }
 })
 
 test('Publish and resolve IPNS', async (t) => {
-  var ipfs = null
+  let ipfs = null
   try {
-    ipfs = await IPFS.create({ silent: true, offline: false })
+    ipfs = await getInstance()
 
     const fetch = await makeIPFSFetch({ ipfs })
 
@@ -278,7 +303,7 @@ test('Publish and resolve IPNS', async (t) => {
     const dataURI = await (await fetch('ipfs:///example.txt', { method: 'post', body: TEST_DATA })).text()
     const folderURI = dataURI.slice(0, -('example.txt'.length))
 
-    const publishResponse = await fetch('ipns://example', { method: 'publish', body: folderURI })
+    const publishResponse = await fetch('ipns://example/', { method: 'post', body: folderURI })
 
     t.equal(publishResponse.status, 200, 'Got OK in response')
 
@@ -302,14 +327,11 @@ test('Publish and resolve IPNS', async (t) => {
     const dnsResponse = await fetch('ipns://ipfs.io/index.html')
 
     t.ok(dnsResponse.ok, 'Able to resolve ipfs.io')
-  } catch (e) {
-    t.fail(e.message)
   } finally {
-    t.end()
-
     try {
       if (ipfs) await ipfs.stop()
-    } catch {
+    } catch (e) {
+      console.error('Could not stop', e)
       // Whatever
     }
   }

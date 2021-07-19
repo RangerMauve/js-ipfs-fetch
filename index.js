@@ -3,7 +3,7 @@ const parseRange = require('range-parser')
 const mime = require('mime/lite')
 const CID = require('cids')
 
-const SUPPORTED_METHODS = ['GET', 'HEAD', 'PUBLISH', 'POST']
+const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST']
 
 function makePotentialPaths (path) {
   return [
@@ -16,7 +16,7 @@ function makePotentialPaths (path) {
 
 module.exports = function makeIPFSFetch ({ ipfs }) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
-    const { hostname, pathname, protocol } = new URL(url)
+    const { hostname, pathname, protocol, searchParams } = new URL(url)
     let ipfsPath = hostname ? hostname + pathname : pathname.slice(1)
 
     const headers = {}
@@ -91,7 +91,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
     }
 
     try {
-      if (method === 'POST') {
+      if (method === 'POST' && protocol === 'ipfs:') {
         // Node.js and browsers handle pathnames differently for IPFS URLs
         const path = ensureSlash(stripLeadingSlash(ipfsPath))
         const { cid } = await ipfs.add({
@@ -135,22 +135,19 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
           let data = null
 
-          const stats = await collect(ipfs.ls(ipfsPath, { signal }))
-          const files = stats.map(({ name, type }) => (type === 'dir') ? `${name}/` : name)
+          try {
+            const stats = await collect(ipfs.ls(ipfsPath, { signal }))
+            const files = stats.map(({ name, type }) => (type === 'dir') ? `${name}/` : name)
 
-          if (files.includes('index.html')) {
-            const resolveStrategy = reqHeaders['X-Resolve'] || reqHeaders['x-resolve']
-            if (resolveStrategy !== 'none') {
-              ipfsPath += 'index.html'
-              return serveFile()
+            if (files.includes('index.html')) {
+              if (!searchParams.has('noResolve')) {
+                return serveFile()
+              }
             }
-          }
-          if ((reqHeaders.Accept || reqHeaders.accept) === 'application/json') {
-            const json = JSON.stringify(files, null, '\t')
-            headers['Content-Type'] = 'application/json; charset=utf-8'
-            data = json
-          } else {
-            const page = `
+
+            const accept = reqHeaders.Accept || reqHeaders.accept
+            if (accept && accept.includes('text/html')) {
+              const page = `
 <!DOCTYPE html>
 <title>${url}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -161,14 +158,21 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 `).join('')}
 </ul>
 `
-            headers['Content-Type'] = 'text/html; charset=utf-8'
-            data = page
-          }
+              headers['Content-Type'] = 'text/html; charset=utf-8'
+              data = page
+            } else {
+              const json = JSON.stringify(files, null, '\t')
+              headers['Content-Type'] = 'application/json; charset=utf-8'
+              data = json
+            }
 
-          return {
-            statusCode: 200,
-            headers,
-            data: intoAsyncIterable(data)
+            return {
+              statusCode: 200,
+              headers,
+              data: intoAsyncIterable(data)
+            }
+          } catch {
+            return serveFile()
           }
         } else {
           if (protocol === 'ipns:') {
@@ -176,7 +180,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           }
           return serveFile()
         }
-      } else if (method === 'PUBLISH' && protocol === 'ipns:') {
+      } else if (method === 'POST' && protocol === 'ipns:') {
         const keyName = stripSlash(ipfsPath)
         const rawValue = await collectString(body)
         const value = rawValue.replace(/^ipfs:\/\//, '/ipfs/').replace(/^ipns:\/\//, '/ipns/')
