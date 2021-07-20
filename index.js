@@ -57,8 +57,9 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       const isRanged = reqHeaders.Range || reqHeaders.range
       const { file, path } = await getFile(ipfsPath)
       const { size } = file
+      const mimeName = searchParams.get('filename') || path
 
-      headers['Content-Type'] = getMimeType(path)
+      headers['Content-Type'] = getMimeType(mimeName)
 
       if (isRanged) {
         const ranges = parseRange(size, isRanged)
