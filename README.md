@@ -75,15 +75,22 @@ You can upload files to IPFS by using `POST` messages.
 
 The response body will contain the `ipfs://` URL for your data.
 
-Please open a GitHub issue if you have ideas for how to support multiple files in a fetch-compliant way.
+### `await fetch('ipfs:///example/', {method: 'post', body: new FormData()})`
+
+You can upload several files to IPFS by using POST messages with a [FormData](https://developer.mozilla.org/en-US/docs/Web/API/FormData) body.
+
+You can [append](https://developer.mozilla.org/en-US/docs/Web/API/FormData) to a FormData with `formData.append(fieldname, content, 'filename.txt')` where `fieldname` gets ignored (use something like `file`?), the `content` can either be a String, Blob, or some sort of stream.
+The `filename` will be the filename inside the IPFS directory that gets created.
+
+The response body will contain the `ipfs://` URL for the directory with your files.
 
 ### `await fetch('ipns://CID/example.txt')`
 
 You can specify an IPNS URL to have it resolve to whatever resource you wanted using the Inter-Planetary Naming System
 
-### `await fetch('ipns://self', {method: 'publish', body: 'ipfs://CID/example.txt'})`
+### `await fetch('ipns://KEY_NAME', {method: 'POST', body: 'ipfs://CID/example.txt'})`
 
-You can publish to IPNS using the `PUBLISH` method.
+You can publish to IPNS using the `POST` method.
 
 The `body` should contain the `ipfs://` URL you want to point to.
 
@@ -95,3 +102,19 @@ Specify the key name in the `origin` portion of the ipns URL.
 If the key doesn't exist, it will ge generated.
 
 Please open a GitHub issue if you have ideas for how to do key import and export.
+
+### `await fetch('ipns://KEY_NAME/example.txt', {method: 'POST', body: 'Hello World!'})`
+
+You can update some data in an IPNS directory using the `POST` method and a file path.
+
+The `body` should be the contents of your file.
+
+If this IPNS key has already had some data published under it, the CID for the directory will be fetched, and your file will be added on top.
+
+This enables you to have mutable folders of data on top of IPFS+IPNS without having to juggle CIDs and merge data in your application.
+
+### `await fetch('ipns://KEY_NAME/example', {method: 'POST', body: new FormData()})`
+
+You can upload several files to IPNS using the `POST` with a FormData body.
+
+Similar to `ipfs` you can append serveral files and update an existing IPFS folder with your new data.

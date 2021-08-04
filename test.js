@@ -274,6 +274,8 @@ test('POST a file into IPFS', async (t) => {
     const text = await fileResponse.text()
     t.equal(text, TEST_DATA, 'Able to load POSTed file')
 
+    /**
+    // MFS uses different CIDs?
     const { cid } = await ipfs.add({
       path: 'example.txt',
       content: TEST_DATA
@@ -282,6 +284,7 @@ test('POST a file into IPFS', async (t) => {
       wrapWithDirectory: true
     })
     t.equal(ipfsUri.match(/ipfs:\/\/([^/]+)/)[1], cid.toString('base32'), 'Matches cid from ipfs.add')
+    **/
   } finally {
     try {
       if (ipfs) await ipfs.stop()
@@ -343,6 +346,78 @@ test('POST formdata to IPFS', async (t) => {
   }
 })
 
+test('POST to a CID', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const response1 = await fetch('ipfs:///example.txt', {
+      method: 'post',
+      body: TEST_DATA
+    })
+
+    const firstURL = await response1.text()
+
+    // Use different file name
+    const response2 = await fetch(firstURL.replace('example.txt', 'example2.txt'), {
+      method: 'post',
+      body: TEST_DATA
+    })
+
+    t.equal(response2.status, 200, 'Got OK in response')
+
+    const ipfsUri = await response2.text()
+    t.match(ipfsUri, /ipfs:\/\/\w+\/example2.txt/, 'returned IPFS url with CID')
+
+    const fileResponse = await fetch(ipfsUri)
+    t.equal(fileResponse.status, 200, 'Got OK in response')
+
+    const text = await fileResponse.text()
+    t.equal(text, TEST_DATA, 'Able to load POSTed file')
+
+    // Split out the file from the path
+    const parentURI = ipfsUri.split('/').slice(0, -1).join('/') + '/'
+
+    const dirResponse = await fetch(parentURI)
+
+    const files = await dirResponse.json()
+
+    t.deepEqual(files, ['example.txt', 'example2.txt'], 'Both files in CID directory')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('Resolve IPNS', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+    const dnsResponse = await fetch('ipns://ipfs.io/index.html')
+
+    t.ok(dnsResponse.ok, 'Able to resolve ipfs.io')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
 test('Publish and resolve IPNS', async (t) => {
   let ipfs = null
   try {
@@ -355,7 +430,7 @@ test('Publish and resolve IPNS', async (t) => {
     const dataURI = await (await fetch('ipfs:///example.txt', { method: 'post', body: TEST_DATA })).text()
     const folderURI = dataURI.slice(0, -('example.txt'.length))
 
-    const publishResponse = await fetch('ipns://example/', { method: 'post', body: folderURI })
+    const publishResponse = await fetch('ipns://post-file/', { method: 'post', body: folderURI })
 
     t.equal(publishResponse.status, 200, 'Got OK in response')
 
@@ -373,12 +448,111 @@ test('Publish and resolve IPNS', async (t) => {
     t.equal(resolvedResponse.status, 200, 'Got OK in response')
 
     const files = await resolvedResponse.json()
-
     t.deepEqual(files, ['example.txt'], 'resolved files')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
 
-    const dnsResponse = await fetch('ipns://ipfs.io/index.html')
+test('POST FormData to IPNS', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
 
-    t.ok(dnsResponse.ok, 'Able to resolve ipfs.io')
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const form = new FormData()
+
+    form.append('file', TEST_DATA, {
+      filename: 'example.txt'
+    })
+
+    form.append('file', TEST_DATA, {
+      filename: 'example2.txt'
+    })
+
+    const body = form.getBuffer()
+    const headers = form.getHeaders()
+
+    const response = await fetch('ipns://post-form/', {
+      method: 'post',
+      headers,
+      body
+    })
+
+    t.ok(response, 'Got a response object')
+    t.equal(response.status, 200, 'Got OK in response')
+
+    const ipnsUri = await response.text()
+    t.match(ipnsUri, /ipns:\/\/\w+\//, 'returned IPFS url with CID')
+
+    const directoryResponse = await fetch(`${ipnsUri}?noResolve`)
+
+    t.ok(directoryResponse.ok, 'Able to list directory')
+
+    const files = await directoryResponse.json()
+
+    t.deepEqual(files, ['example.txt', 'example2.txt'], 'Multiple files got uploaded')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('POST file to update IPNS', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const dataURI = await (await fetch('ipfs:///example.txt', { method: 'post', body: TEST_DATA })).text()
+    const folderURI = dataURI.slice(0, -('example.txt'.length))
+
+    const publishResponse = await fetch('ipns://update-file/', { method: 'post', body: folderURI })
+
+    t.equal(publishResponse.status, 200, 'Got OK in response')
+
+    const ipnsURI = await publishResponse.text()
+
+    // base36 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
+
+    const postResponse = await fetch(ipnsURI + 'example2.txt', {
+      method: 'POST',
+      body: TEST_DATA
+    })
+
+    t.equal(postResponse.status, 200, 'Able to post to IPNS url with data')
+
+    const ipnsURI2 = await postResponse.text()
+
+    // base36 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    t.ok(ipnsURI2.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
+
+    const resolvedResponse = await fetch(ipnsURI, {
+      headers: {
+        Accept: 'application/json'
+      }
+    })
+
+    t.equal(resolvedResponse.status, 200, 'Got OK in response')
+
+    const files = await resolvedResponse.json()
+    t.deepEqual(files, ['example.txt', 'example2.txt'], 'resolved files')
   } finally {
     try {
       if (ipfs) await ipfs.stop()

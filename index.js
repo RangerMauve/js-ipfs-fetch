@@ -6,6 +6,7 @@ const Busboy = require('busboy')
 const { Readable } = require('stream')
 const { EventIterator } = require('event-iterator')
 const crypto = require('crypto')
+const { join } = require('path')
 
 const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST']
 
@@ -28,12 +29,20 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
     headers.Allow = SUPPORTED_METHODS.join(', ')
 
     // Split out IPNS info and put it back together to resolve.
-    async function resolveIPNS () {
-      const segments = ensureStartingSlash(ipfsPath).split(/\/+/)
-      const mainSegment = segments[1]
+    async function resolveIPNS (path) {
+      const segments = ensureStartingSlash(path).split(/\/+/)
+      let mainSegment = segments[1]
+
+      if (!mainSegment.includes('.')) {
+        const keys = await ipfs.key.list({ signal })
+        const keyForName = keys.find(({ name }) => name === mainSegment)
+        if (keyForName) {
+          mainSegment = keyForName.id
+        }
+      }
       const toResolve = `/ipns${ensureStartingSlash(mainSegment)}`
       const resolved = await ipfs.resolve(toResolve, { signal })
-      ipfsPath = [resolved, ...segments.slice(2)].join('/')
+      return [resolved, ...segments.slice(2)].join('/')
     }
 
     async function getFile (path) {
@@ -95,13 +104,20 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       }
     }
 
-    try {
-      if (method === 'POST' && protocol === 'ipfs:') {
-        const tmpDir = makeTmpDir()
+    async function uploadData (path, content, isFormData) {
+      const tmpDir = makeTmpDir()
+      const { rootCID, relativePath } = cidFromPath(path)
+      try {
+        if (rootCID) {
+          await ipfs.files.cp(rootCID, tmpDir, {
+            parents: true,
+            cidVersion: 1,
+            signal
+          })
+        }
+
         // Handle multipart formdata uploads
-        const contentType = reqHeaders['Content-Type'] || reqHeaders['content-type']
-        if (contentType && contentType.includes('multipart/form-data')) {
-          const rootPath = ensureStartingSlash(ipfsPath.endsWith('/') ? ipfsPath : (ipfsPath + '/'))
+        if (isFormData) {
           const busboy = new Busboy({ headers: reqHeaders })
 
           const toUpload = new EventIterator(({ push, stop, fail }) => {
@@ -109,9 +125,10 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
             busboy.once('finish', stop)
 
             busboy.on('file', async (fieldName, fileData, fileName) => {
-              const finalPath = tmpDir + fileName
+              const finalPath = join(tmpDir, relativePath, fileName)
               try {
                 const result = ipfs.files.write(finalPath, Readable.from(fileData), {
+                  cidVersion: 1,
                   parents: true,
                   create: true,
                   signal
@@ -128,40 +145,63 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
           // Parse body as a multipart form
           // TODO: Readable.from doesn't work in browsers
-          Readable.from(body).pipe(busboy)
+          Readable.from(content).pipe(busboy)
 
           // toUpload is an async iterator of promises
           // We collect the promises (all files are queued for upload)
           // Then we wait for all of them to resolve
           await Promise.all(await collect(toUpload))
+        } else {
+          // Node.js and browsers handle pathnames differently for IPFS URLs
+          const path = join(tmpDir, ensureStartingSlash(stripEndingSlash(relativePath)))
 
-          const { cid } = await ipfs.files.stat(tmpDir, { hash: true, signal })
-
-          const cidHash = cid.toString()
-          const addedURL = `ipfs://${cidHash}${rootPath}`
-
-          await ipfs.files.rm(tmpDir, { recursive: true, signal })
-
-          return {
-            statusCode: 200,
-            headers,
-            data: addedURL
-          }
+          await ipfs.files.write(path, content, {
+            signal,
+            parents: true,
+            create: true,
+            cidVersion: 1
+          })
         }
 
-        // Node.js and browsers handle pathnames differently for IPFS URLs
-        const path = ensureStartingSlash(stripEndingSlash(ipfsPath))
+        const { cid } = await ipfs.files.stat(tmpDir, { hash: true, signal })
 
-        const { cid } = await ipfs.add({
-          path,
-          content: body,
-          signal
-        }, {
-          cidVersion: 1,
-          wrapWithDirectory: true
-        })
         const cidHash = cid.toString()
-        const addedURL = `ipfs://${cidHash}${path}`
+        const addedURL = `ipfs://${cidHash}${ensureStartingSlash(relativePath)}`
+
+        return addedURL
+      } finally {
+        await ipfs.files.rm(tmpDir, { recursive: true, signal })
+      }
+    }
+
+    async function updateIPNS (keyName, value) {
+      const keys = await ipfs.key.list({ signal })
+      const existing = keys.find(({ name, id }) => (name === keyName) || (new CID(id).toV1().toString('base36') === keyName))
+      if (!existing) {
+        await ipfs.key.gen(keyName, { signal })
+      }
+
+      const finalName = existing ? existing.name : keyName
+
+      const { name: cid } = await ipfs.name.publish(value, { name: finalName, signal })
+      const hash = new CID(cid).toV1().toString('base36')
+
+      const ipnsURL = `ipns://${hash}/`
+      return {
+        statusCode: 200,
+        headers,
+        data: intoAsyncIterable(ipnsURL)
+      }
+    }
+
+    try {
+      if (method === 'POST' && protocol === 'ipfs:') {
+        // Handle multipart formdata uploads
+        const contentType = reqHeaders['Content-Type'] || reqHeaders['content-type']
+        const isFormData = contentType && contentType.includes('multipart/form-data')
+
+        const addedURL = await uploadData(ipfsPath, body, isFormData)
+
         return {
           statusCode: 200,
           headers,
@@ -169,7 +209,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         }
       } else if (method === 'HEAD') {
         if (protocol === 'ipns:') {
-          await resolveIPNS()
+          ipfsPath = await resolveIPNS(ipfsPath)
         }
         if (pathname.endsWith('/')) {
           await collect(ipfs.ls(ipfsPath, { signal }))
@@ -189,7 +229,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         if (pathname.endsWith('/')) {
           // Probably a directory
           if (protocol === 'ipns:') {
-            await resolveIPNS()
+            ipfsPath = await resolveIPNS(ipfsPath)
           }
 
           let data = null
@@ -235,28 +275,41 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           }
         } else {
           if (protocol === 'ipns:') {
-            await resolveIPNS()
+            ipfsPath = await resolveIPNS(ipfsPath)
           }
           return serveFile()
         }
       } else if (method === 'POST' && protocol === 'ipns:') {
-        const keyName = stripSlash(ipfsPath)
-        const rawValue = await collectString(body)
-        const value = rawValue.replace(/^ipfs:\/\//, '/ipfs/').replace(/^ipns:\/\//, '/ipns/')
+        // Handle multipart formdata uploads
+        const contentType = reqHeaders['Content-Type'] || reqHeaders['content-type']
+        const isFormData = contentType && contentType.includes('multipart/form-data')
 
-        const keys = await ipfs.key.list({ signal })
-        if (!keys.some(({ name }) => name === keyName)) {
-          await ipfs.key.gen(keyName, { signal })
-        }
+        const split = ipfsPath.split('/')
+        const keyName = split[0]
+        const subpath = split.slice(1).join('/')
 
-        const { name } = await ipfs.name.publish(value, { name: keyName, signal })
-        const nameHash = new CID(name).toV1().toString('base36')
+        if (isFormData || subpath) {
+          // Resolve to current CID before writing over it
+          try {
+            ipfsPath = await resolveIPNS(keyName)
+            if (ipfsPath.startsWith('/ipfs/')) ipfsPath = ipfsPath.slice('/ipfs/'.length)
+            ipfsPath += `/${subpath}`
+          } catch {
+            // If CID couldn't be resolved from the key, use the subpath
+            // TODO: Detect specific issues
+            ipfsPath = subpath
+          }
 
-        const nameURL = `ipns://${nameHash}/`
-        return {
-          statusCode: 200,
-          headers,
-          data: intoAsyncIterable(nameURL)
+          const addedURL = await uploadData(ipfsPath, body, isFormData)
+          // We just want the new root CID, not the full path to the file
+          const cid = addedURL.slice('ipfs://'.length).split('/')[0]
+          const value = `/ipfs/${cid}/`
+
+          return updateIPNS(keyName, value)
+        } else {
+          const rawValue = await collectString(body)
+          const value = rawValue.replace(/^ipfs:\/\//, '/ipfs/').replace(/^ipns:\/\//, '/ipns/')
+          return updateIPNS(keyName, value)
         }
       } else {
         return {
@@ -305,10 +358,6 @@ function stripEndingSlash (path) {
   return path
 }
 
-function stripSlash (path) {
-  return path.replace(/\/+/, '')
-}
-
 function getMimeType (path) {
   let mimeType = mime.getType(path) || 'text/plain'
   if (mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
@@ -318,4 +367,21 @@ function getMimeType (path) {
 function makeTmpDir () {
   const random = crypto.randomBytes(8).toString('hex')
   return `/ipfs-fetch-dirs/${random}/`
+}
+
+function cidFromPath (path) {
+  const components = path.split('/')
+  if (path.startsWith('/')) components.shift()
+  try {
+    const rootCID = new CID(components[0])
+    return {
+      rootCID,
+      relativePath: components.slice(1).join('/')
+    }
+  } catch {
+    return {
+      rootCID: null,
+      relativePath: path
+    }
+  }
 }
