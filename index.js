@@ -2,6 +2,10 @@ const makeFetch = require('make-fetch')
 const parseRange = require('range-parser')
 const mime = require('mime/lite')
 const CID = require('cids')
+const Busboy = require('busboy')
+const { Readable } = require('stream')
+const { EventIterator } = require('event-iterator')
+const crypto = require('crypto')
 
 const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST']
 
@@ -25,9 +29,9 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
     // Split out IPNS info and put it back together to resolve.
     async function resolveIPNS () {
-      const segments = ensureSlash(ipfsPath).split(/\/+/)
+      const segments = ensureStartingSlash(ipfsPath).split(/\/+/)
       const mainSegment = segments[1]
-      const toResolve = `/ipns${ensureSlash(mainSegment)}`
+      const toResolve = `/ipns${ensureStartingSlash(mainSegment)}`
       const resolved = await ipfs.resolve(toResolve, { signal })
       ipfsPath = [resolved, ...segments.slice(2)].join('/')
     }
@@ -93,11 +97,65 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
 
     try {
       if (method === 'POST' && protocol === 'ipfs:') {
+        const tmpDir = makeTmpDir()
+        // Handle multipart formdata uploads
+        const contentType = reqHeaders['Content-Type'] || reqHeaders['content-type']
+        if (contentType && contentType.includes('multipart/form-data')) {
+          const rootPath = ensureStartingSlash(ipfsPath.endsWith('/') ? ipfsPath : (ipfsPath + '/'))
+          const busboy = new Busboy({ headers: reqHeaders })
+
+          const toUpload = new EventIterator(({ push, stop, fail }) => {
+            busboy.once('error', fail)
+            busboy.once('finish', stop)
+
+            busboy.on('file', async (fieldName, fileData, fileName) => {
+              const finalPath = tmpDir + fileName
+              try {
+                const result = ipfs.files.write(finalPath, Readable.from(fileData), {
+                  parents: true,
+                  create: true,
+                  signal
+                })
+                push(result)
+              } catch (e) {
+                fail(e)
+              }
+            })
+
+            // TODO: Does busboy need to be GC'd?
+            return () => {}
+          })
+
+          // Parse body as a multipart form
+          // TODO: Readable.from doesn't work in browsers
+          Readable.from(body).pipe(busboy)
+
+          // toUpload is an async iterator of promises
+          // We collect the promises (all files are queued for upload)
+          // Then we wait for all of them to resolve
+          await Promise.all(await collect(toUpload))
+
+          const { cid } = await ipfs.files.stat(tmpDir, { hash: true, signal })
+
+          const cidHash = cid.toString()
+          const addedURL = `ipfs://${cidHash}${rootPath}`
+
+          await ipfs.files.rm(tmpDir, { recursive: true, signal })
+
+          return {
+            statusCode: 200,
+            headers,
+            data: addedURL
+          }
+        }
+
         // Node.js and browsers handle pathnames differently for IPFS URLs
-        const path = ensureSlash(stripLeadingSlash(ipfsPath))
+        const path = ensureStartingSlash(stripEndingSlash(ipfsPath))
+
         const { cid } = await ipfs.add({
           path,
-          content: body
+          content: body,
+          signal
         }, {
           cidVersion: 1,
           wrapWithDirectory: true
@@ -237,12 +295,12 @@ async function collectString (iterable) {
   return items.map((item) => item.toString()).join('')
 }
 
-function ensureSlash (path) {
+function ensureStartingSlash (path) {
   if (!path.startsWith('/')) return '/' + path
   return path
 }
 
-function stripLeadingSlash (path) {
+function stripEndingSlash (path) {
   if (path.endsWith('/')) return path.slice(0, -1)
   return path
 }
@@ -255,4 +313,9 @@ function getMimeType (path) {
   let mimeType = mime.getType(path) || 'text/plain'
   if (mimeType.startsWith('text/')) mimeType = `${mimeType}; charset=utf-8`
   return mimeType
+}
+
+function makeTmpDir () {
+  const random = crypto.randomBytes(8).toString('hex')
+  return `/ipfs-fetch-dirs/${random}/`
 }

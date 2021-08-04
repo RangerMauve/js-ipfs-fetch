@@ -3,6 +3,7 @@ global.Buffer = Buffer
 const test = require('tape')
 const IPFS = require('ipfs-core')
 const path = require('path')
+const FormData = require('form-data')
 const makeIPFSFetch = require('./')
 
 const TEST_DATA = 'Hello World!'
@@ -281,6 +282,57 @@ test('POST a file into IPFS', async (t) => {
       wrapWithDirectory: true
     })
     t.equal(ipfsUri.match(/ipfs:\/\/([^/]+)/)[1], cid.toString('base32'), 'Matches cid from ipfs.add')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('POST formdata to IPFS', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const form = new FormData()
+
+    form.append('file', TEST_DATA, {
+      filename: 'example.txt'
+    })
+
+    form.append('file', TEST_DATA, {
+      filename: 'example2.txt'
+    })
+
+    const body = form.getBuffer()
+    const headers = form.getHeaders()
+
+    const response = await fetch('ipfs:///', {
+      method: 'post',
+      headers,
+      body
+    })
+
+    t.ok(response, 'Got a response object')
+    t.equal(response.status, 200, 'Got OK in response')
+
+    const ipfsUri = await response.text()
+    t.match(ipfsUri, /ipfs:\/\/\w+\//, 'returned IPFS url with CID')
+
+    const directoryResponse = await fetch(`${ipfsUri}?noResolve`)
+
+    t.ok(directoryResponse.ok, 'Able to list directory')
+
+    const files = await directoryResponse.json()
+
+    t.deepEqual(files, ['example.txt', 'example2.txt'], 'Multiple files got uploaded')
   } finally {
     try {
       if (ipfs) await ipfs.stop()

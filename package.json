@@ -24,7 +24,9 @@
   },
   "homepage": "https://github.com/RangerMauve/js-ipfs-fetch#readme",
   "dependencies": {
+    "busboy": "^0.3.1",
     "cids": "^1.0.2",
+    "event-iterator": "^2.0.0",
     "make-fetch": "^2.2.1",
     "mime": "^2.4.6",
     "range-parser": "^1.2.1"
@@ -32,6 +34,7 @@
   "devDependencies": {
     "browser-run": "^8.0.0",
     "browserify": "^17.0.0",
+    "form-data": "^4.0.0",
     "ipfs-core": "^0.6.1",
     "standard": "^14.3.4",
     "tape": "^5.0.1"
