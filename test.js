@@ -206,8 +206,8 @@ test('Resolve index.html from a directory', async (t) => {
     t.pass('Able to make create fetch instance')
 
     const results = await collect(ipfs.addAll([
-      { path: '/index.html', content: TEST_DATA },
-      { path: 'example/index.html', content: TEST_DATA }
+      { path: '/index.html', content: TEST_DATA, mode: 420 },
+      { path: 'example/index.html', content: TEST_DATA, mode: 420 }
     ], { wrapWithDirectory: true, cidVersion: 1 }))
 
     // The last element should be the directory itself
@@ -257,7 +257,7 @@ test('POST a file into IPFS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const response = await fetch('ipfs:///example.txt', {
+    const response = await fetch('ipfs://example.txt/', {
       method: 'post',
       body: TEST_DATA
     })
@@ -266,7 +266,7 @@ test('POST a file into IPFS', async (t) => {
     t.equal(response.status, 200, 'Got OK in response')
 
     const ipfsUri = await response.text()
-    t.match(ipfsUri, /ipfs:\/\/\w+\/example.txt/, 'returned IPFS url with CID')
+    t.match(ipfsUri, /^ipfs:\/\/\w+\/example.txt$/, 'returned IPFS url with CID')
 
     const fileResponse = await fetch(ipfsUri)
     t.equal(fileResponse.status, 200, 'Got OK in response')
@@ -355,7 +355,9 @@ test('POST to a CID', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const response1 = await fetch('ipfs:///example.txt', {
+    // Formerly 'ipfs:///example.txt`
+    // Needed to change because a single filename gets interpreted as the hostname
+    const response1 = await fetch('ipfs://example.txt/', {
       method: 'post',
       body: TEST_DATA
     })
@@ -371,7 +373,7 @@ test('POST to a CID', async (t) => {
     t.equal(response2.status, 200, 'Got OK in response')
 
     const ipfsUri = await response2.text()
-    t.match(ipfsUri, /ipfs:\/\/\w+\/example2.txt/, 'returned IPFS url with CID')
+    t.match(ipfsUri, /^ipfs:\/\/\w+\/example2.txt$/, 'returned IPFS url with CID')
 
     const fileResponse = await fetch(ipfsUri)
     t.equal(fileResponse.status, 200, 'Got OK in response')
@@ -436,8 +438,8 @@ test('Publish and resolve IPNS', async (t) => {
 
     const ipnsURI = await publishResponse.text()
 
-    // base36 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
-    t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
+    // base32 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    t.ok(ipnsURI.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
 
     const resolvedResponse = await fetch(ipnsURI, {
       headers: {
@@ -528,8 +530,8 @@ test('POST file to update IPNS', async (t) => {
 
     const ipnsURI = await publishResponse.text()
 
-    // base36 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
-    t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
+    // base32 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    t.ok(ipnsURI.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
 
     const postResponse = await fetch(ipnsURI + 'example2.txt', {
       method: 'POST',
@@ -540,8 +542,8 @@ test('POST file to update IPNS', async (t) => {
 
     const ipnsURI2 = await postResponse.text()
 
-    // base36 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
-    t.ok(ipnsURI2.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
+    // base32 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    t.ok(ipnsURI2.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
 
     const resolvedResponse = await fetch(ipnsURI, {
       headers: {
