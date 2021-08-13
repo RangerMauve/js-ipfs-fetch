@@ -10,7 +10,7 @@ const crypto = require('crypto')
 const { join } = require('path')
 const { exporter } = require('ipfs-unixfs-exporter')
 
-const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST']
+const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'DELETE']
 
 module.exports = function makeIPFSFetch ({ ipfs }) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
@@ -88,73 +88,70 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       const tmpDir = makeTmpDir()
       const { rootCID, relativePath } = cidFromPath(path)
 
-      try {
-        if (rootCID) {
-          await ipfs.files.cp(rootCID, tmpDir, {
-            parents: true,
-            cidVersion: 1,
-            signal
-          })
-        }
-
-        // Handle multipart formdata uploads
-        if (isFormData) {
-          const busboy = new Busboy({ headers: reqHeaders })
-
-          const toUpload = new EventIterator(({ push, stop, fail }) => {
-            busboy.once('error', fail)
-            busboy.once('finish', stop)
-
-            busboy.on('file', async (fieldName, fileData, fileName) => {
-              const finalPath = join(tmpDir, relativePath, fileName)
-              try {
-                const result = ipfs.files.write(finalPath, Readable.from(fileData), {
-                  cidVersion: 1,
-                  parents: true,
-                  create: true,
-                  signal
-                })
-                push(result)
-              } catch (e) {
-                fail(e)
-              }
-            })
-
-            // TODO: Does busboy need to be GC'd?
-            return () => {}
-          })
-
-          // Parse body as a multipart form
-          // TODO: Readable.from doesn't work in browsers
-          Readable.from(content).pipe(busboy)
-
-          // toUpload is an async iterator of promises
-          // We collect the promises (all files are queued for upload)
-          // Then we wait for all of them to resolve
-          await Promise.all(await collect(toUpload))
-        } else {
-          // Node.js and browsers handle pathnames differently for IPFS URLs
-          const path = join(tmpDir, ensureStartingSlash(stripEndingSlash(relativePath)))
-
-          await ipfs.files.write(path, content, {
-            signal,
-            parents: true,
-            create: true,
-            cidVersion: 1
-          })
-        }
-
-        const { cid } = await ipfs.files.stat(tmpDir, { hash: true, signal })
-
-        const cidHash = cid.toString()
-        const endPath = isFormData ? relativePath : stripEndingSlash(relativePath)
-        const addedURL = `ipfs://${cidHash}${ensureStartingSlash(endPath)}`
-
-        return addedURL
-      } finally {
-        // No need to RM if flushed
-        // await ipfs.files.rm(tmpDir, { recursive: true, signal })
+      if (rootCID) {
+        await ipfs.files.cp(rootCID, tmpDir, {
+          parents: true,
+          cidVersion: 1,
+          signal
+        })
       }
+
+      // Handle multipart formdata uploads
+      if (isFormData) {
+        const busboy = new Busboy({ headers: reqHeaders })
+
+        const toUpload = new EventIterator(({ push, stop, fail }) => {
+          busboy.once('error', fail)
+          busboy.once('finish', stop)
+
+          busboy.on('file', async (fieldName, fileData, fileName) => {
+            const finalPath = join(tmpDir, relativePath, fileName)
+            try {
+              const result = ipfs.files.write(finalPath, Readable.from(fileData), {
+                cidVersion: 1,
+                parents: true,
+                create: true,
+                rawLeaves: false,
+                signal
+              })
+              push(result)
+            } catch (e) {
+              fail(e)
+            }
+          })
+
+          // TODO: Does busboy need to be GC'd?
+          return () => {}
+        })
+
+        // Parse body as a multipart form
+        // TODO: Readable.from doesn't work in browsers
+        Readable.from(content).pipe(busboy)
+
+        // toUpload is an async iterator of promises
+        // We collect the promises (all files are queued for upload)
+        // Then we wait for all of them to resolve
+        await Promise.all(await collect(toUpload))
+      } else {
+        // Node.js and browsers handle pathnames differently for IPFS URLs
+        const path = join(tmpDir, ensureStartingSlash(stripEndingSlash(relativePath)))
+
+        await ipfs.files.write(path, Readable.from(content), {
+          signal,
+          parents: true,
+          create: true,
+          rawLeaves: false,
+          cidVersion: 1
+        })
+      }
+
+      const { cid } = await ipfs.files.stat(tmpDir, { hash: true, signal })
+
+      const cidHash = cid.toString()
+      const endPath = isFormData ? relativePath : stripEndingSlash(relativePath)
+      const addedURL = `ipfs://${cidHash}${ensureStartingSlash(endPath)}`
+
+      return addedURL
     }
 
     async function updateIPNS (keyName, value) {
@@ -324,6 +321,41 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           const rawValue = await collectString(body)
           const value = rawValue.replace(/^ipfs:\/\//, '/ipfs/').replace(/^ipns:\/\//, '/ipns/')
           return updateIPNS(keyName, value)
+        }
+      } else if (method === 'DELETE') {
+        if (protocol === 'ipns:') {
+          ipfsPath = await resolveIPNS(ipfsPath)
+        }
+
+        const tmpDir = makeTmpDir()
+        const { rootCID, relativePath } = cidFromPath(ipfsPath)
+
+        if (rootCID) {
+          await ipfs.files.cp(rootCID, tmpDir, {
+            parents: true,
+            cidVersion: 1,
+            signal
+          })
+        }
+
+        await ipfs.files.rm(join(tmpDir, relativePath), {
+          recursive: true,
+          cidVersion: 1,
+          signal
+        })
+
+        const { cid } = await ipfs.files.stat(tmpDir, {
+          hash: true,
+          signal
+        })
+
+        const cidHash = cid.toString()
+        const addedURL = `ipfs://${cidHash}/`
+
+        return {
+          statusCode: 200,
+          headers,
+          data: intoAsyncIterable(addedURL)
         }
       } else {
         return {

@@ -6,6 +6,7 @@ const path = require('path')
 const FormData = require('form-data')
 const makeIPFSFetch = require('./')
 
+const EMPTY_DIR_URL = 'ipfs://bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354/'
 const TEST_DATA = 'Hello World!'
 
 // Used for browser tests
@@ -317,7 +318,7 @@ test('POST formdata to IPFS', async (t) => {
     const body = form.getBuffer()
     const headers = form.getHeaders()
 
-    const response = await fetch('ipfs:///', {
+    const response = await fetch(EMPTY_DIR_URL, {
       method: 'post',
       headers,
       body
@@ -438,7 +439,7 @@ test('Publish and resolve IPNS', async (t) => {
 
     const ipnsURI = await publishResponse.text()
 
-    // base32 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    // base32 prefix is b https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
     t.ok(ipnsURI.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
 
     const resolvedResponse = await fetch(ipnsURI, {
@@ -530,7 +531,7 @@ test('POST file to update IPNS', async (t) => {
 
     const ipnsURI = await publishResponse.text()
 
-    // base32 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    // base32 prefix is b https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
     t.ok(ipnsURI.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
 
     const postResponse = await fetch(ipnsURI + 'example2.txt', {
@@ -542,7 +543,7 @@ test('POST file to update IPNS', async (t) => {
 
     const ipnsURI2 = await postResponse.text()
 
-    // base32 prefix is k https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
+    // base32 prefix is b https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
     t.ok(ipnsURI2.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
 
     const resolvedResponse = await fetch(ipnsURI, {
@@ -555,6 +556,50 @@ test('POST file to update IPNS', async (t) => {
 
     const files = await resolvedResponse.json()
     t.deepEqual(files, ['example.txt', 'example2.txt'], 'resolved files')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('DELETE from IPFS URL', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const results = await collect(ipfs.addAll([
+      { path: '/example.txt', content: TEST_DATA },
+      { path: '/example2.txt', content: TEST_DATA }
+    ], { wrapWithDirectory: true, cidVersion: 1 }))
+
+    // The last element should be the directory itself
+    const { cid } = results[results.length - 1]
+
+    const deleteResponse = await fetch(`ipfs://${cid}/example.txt`, {
+      method: 'DELETE'
+    })
+
+    t.equal(deleteResponse.status, 200, 'Got OK in response')
+
+    const url = await deleteResponse.text()
+
+    t.ok(url.startsWith('ipfs://b'), 'Got base32 encoded IPFS url')
+
+    const directoryResponse = await fetch(url)
+
+    t.equal(directoryResponse.status, 200, 'Able to GET new directory')
+
+    const files = await directoryResponse.json()
+
+    t.deepEqual(files, ['example2.txt'], 'File got deleted')
   } finally {
     try {
       if (ipfs) await ipfs.stop()
