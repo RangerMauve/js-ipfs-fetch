@@ -26,6 +26,7 @@
   "dependencies": {
     "busboy": "^0.3.1",
     "event-iterator": "^2.0.0",
+    "ipfs-unixfs-exporter": "^7.0.6",
     "make-fetch": "^2.2.1",
     "mime": "^2.4.6",
     "multiformats": "^9.4.2",
