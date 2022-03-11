@@ -1,25 +1,39 @@
 global.Buffer = Buffer
 
 const test = require('tape')
-const IPFS = require('ipfs-core')
-const path = require('path')
 const FormData = require('form-data')
 const makeIPFSFetch = require('./')
+const ipfsHttpModule = require('ipfs-http-client')
 
-const EMPTY_DIR_URL = 'ipfs://bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354/'
+const Ctl = require('ipfsd-ctl')
+const ipfsBin = require('go-ipfs').path()
+
+const EMPTY_DIR_URL = 'ipfs://bafyaabakaieac'
 const TEST_DATA = 'Hello World!'
 
-// Used for browser tests
-test.onFinish(() => {
+const factory = Ctl.createFactory({
+  type: 'go',
+  // test: true,
+  disposable: true,
+  remote: false,
+  ipfsHttpModule,
+  ipfsBin,
+  args: '--enable-namesys-pubsub'
+})
+
+test.onFinish(async () => {
+  await factory.clean()
+  // Used for browser tests
   if ((typeof window !== 'undefined') && window.close) window.close()
 })
 
-function getInstance () {
-  return IPFS.create({
-    silent: true,
-    offline: true,
-    repo: path.join(__dirname, '.test-repo')
-  })
+async function getInstance () {
+  const ipfsd = await factory.spawn()
+  await ipfsd.init()
+  await ipfsd.start()
+  await ipfsd.api.id()
+
+  return ipfsd.api
 }
 
 test('Load a file via fetch', async (t) => {
@@ -400,27 +414,6 @@ test('POST to a CID', async (t) => {
   }
 })
 
-test('Resolve IPNS', async (t) => {
-  let ipfs = null
-  try {
-    ipfs = await getInstance()
-
-    const fetch = await makeIPFSFetch({ ipfs })
-
-    t.pass('Able to make create fetch instance')
-    const dnsResponse = await fetch('ipns://ipfs.io/index.html')
-
-    t.ok(dnsResponse.ok, 'Able to resolve ipfs.io')
-  } finally {
-    try {
-      if (ipfs) await ipfs.stop()
-    } catch (e) {
-      console.error('Could not stop', e)
-      // Whatever
-    }
-  }
-})
-
 test('Publish and resolve IPNS', async (t) => {
   let ipfs = null
   try {
@@ -439,8 +432,7 @@ test('Publish and resolve IPNS', async (t) => {
 
     const ipnsURI = await publishResponse.text()
 
-    // base32 prefix is b https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
-    t.ok(ipnsURI.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
+    t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
 
     const resolvedResponse = await fetch(ipnsURI, {
       headers: {
@@ -531,8 +523,7 @@ test('POST file to update IPNS', async (t) => {
 
     const ipnsURI = await publishResponse.text()
 
-    // base32 prefix is b https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
-    t.ok(ipnsURI.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
+    t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
 
     const postResponse = await fetch(ipnsURI + 'example2.txt', {
       method: 'POST',
@@ -543,8 +534,7 @@ test('POST file to update IPNS', async (t) => {
 
     const ipnsURI2 = await postResponse.text()
 
-    // base32 prefix is b https://github.com/multiformats/js-multibase/blob/ddd99e6d0d089d5d1209094f2e7a2a07d87729fb/src/constants.js#L43
-    t.ok(ipnsURI2.startsWith('ipns://b'), 'Got base32 encoded IPNS url')
+    t.ok(ipnsURI2.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
 
     const resolvedResponse = await fetch(ipnsURI, {
       headers: {
@@ -600,6 +590,28 @@ test('DELETE from IPFS URL', async (t) => {
     const files = await directoryResponse.json()
 
     t.deepEqual(files, ['example2.txt'], 'File got deleted')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('Resolve IPNS', async (t) => {
+  t.timeoutAfter(6000)
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+    const dnsResponse = await fetch('ipns://ipfs.io/')
+
+    t.ok(dnsResponse.ok, 'Able to resolve ipfs.io')
   } finally {
     try {
       if (ipfs) await ipfs.stop()
