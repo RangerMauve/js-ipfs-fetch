@@ -4,7 +4,8 @@
   "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
   "main": "index.js",
   "scripts": {
-    "test": "standard --fix && node test",
+    "lint": "standard --fix",
+    "test": "node test",
     "test-browser": "browserify -d ./test | browser-run"
   },
   "repository": {
