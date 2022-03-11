@@ -263,6 +263,7 @@ test('Resolve index.html from a directory', async (t) => {
   }
 })
 
+// This should be deprecated?
 test('POST a file into IPFS', async (t) => {
   let ipfs = null
   try {
@@ -310,7 +311,7 @@ test('POST a file into IPFS', async (t) => {
   }
 })
 
-test('POST formdata to IPFS', async (t) => {
+test('PUT formdata to IPFS', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -333,7 +334,7 @@ test('POST formdata to IPFS', async (t) => {
     const headers = form.getHeaders()
 
     const response = await fetch(EMPTY_DIR_URL, {
-      method: 'post',
+      method: 'put',
       headers,
       body
     })
@@ -361,7 +362,7 @@ test('POST formdata to IPFS', async (t) => {
   }
 })
 
-test('POST to a CID', async (t) => {
+test('PUT to a CID', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -381,7 +382,7 @@ test('POST to a CID', async (t) => {
 
     // Use different file name
     const response2 = await fetch(firstURL.replace('example.txt', 'example2.txt'), {
-      method: 'post',
+      method: 'put',
       body: TEST_DATA
     })
 
@@ -394,7 +395,7 @@ test('POST to a CID', async (t) => {
     t.equal(fileResponse.status, 200, 'Got OK in response')
 
     const text = await fileResponse.text()
-    t.equal(text, TEST_DATA, 'Able to load POSTed file')
+    t.equal(text, TEST_DATA, 'Able to load uploaded file')
 
     // Split out the file from the path
     const parentURI = ipfsUri.split('/').slice(0, -1).join('/') + '/'
@@ -423,10 +424,16 @@ test('Publish and resolve IPNS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const dataURI = await (await fetch('ipfs:///example.txt', { method: 'post', body: TEST_DATA })).text()
+    const dataURI = await (await fetch('ipfs:///example.txt', {
+      method: 'post',
+      body: TEST_DATA
+    })).text()
     const folderURI = dataURI.slice(0, -('example.txt'.length))
 
-    const publishResponse = await fetch('ipns://post-file/', { method: 'post', body: folderURI })
+    const publishResponse = await fetch('ipns://put-file/', {
+      method: 'post',
+      body: folderURI
+    })
 
     t.equal(publishResponse.status, 200, 'Got OK in response')
 
@@ -454,7 +461,7 @@ test('Publish and resolve IPNS', async (t) => {
   }
 })
 
-test('POST FormData to IPNS', async (t) => {
+test('PUT FormData to IPNS', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -476,8 +483,8 @@ test('POST FormData to IPNS', async (t) => {
     const body = form.getBuffer()
     const headers = form.getHeaders()
 
-    const response = await fetch('ipns://post-form/', {
-      method: 'post',
+    const response = await fetch('ipns://put-form/', {
+      method: 'put',
       headers,
       body
     })
@@ -505,7 +512,7 @@ test('POST FormData to IPNS', async (t) => {
   }
 })
 
-test('POST file to update IPNS', async (t) => {
+test('PUT file to update IPNS', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -514,10 +521,16 @@ test('POST file to update IPNS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const dataURI = await (await fetch('ipfs:///example.txt', { method: 'post', body: TEST_DATA })).text()
+    const dataURI = await (await fetch('ipfs:///example.txt', {
+      method: 'post',
+      body: TEST_DATA
+    })).text()
     const folderURI = dataURI.slice(0, -('example.txt'.length))
 
-    const publishResponse = await fetch('ipns://update-file/', { method: 'post', body: folderURI })
+    const publishResponse = await fetch('ipns://update-file/', {
+      method: 'post',
+      body: folderURI
+    })
 
     t.equal(publishResponse.status, 200, 'Got OK in response')
 
@@ -525,14 +538,14 @@ test('POST file to update IPNS', async (t) => {
 
     t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
 
-    const postResponse = await fetch(ipnsURI + 'example2.txt', {
-      method: 'POST',
+    const putResponse = await fetch(ipnsURI + 'example2.txt', {
+      method: 'put',
       body: TEST_DATA
     })
 
-    t.equal(postResponse.status, 200, 'Able to post to IPNS url with data')
+    t.equal(putResponse.status, 200, 'Able to upload to IPNS url with data')
 
-    const ipnsURI2 = await postResponse.text()
+    const ipnsURI2 = await putResponse.text()
 
     t.ok(ipnsURI2.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
 

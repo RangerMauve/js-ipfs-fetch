@@ -10,7 +10,7 @@ const crypto = require('crypto')
 const posixPath = require('path').posix
 const { exporter } = require('ipfs-unixfs-exporter')
 
-const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'DELETE']
+const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE']
 
 module.exports = function makeIPFSFetch ({ ipfs }) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
@@ -191,7 +191,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
     }
 
     try {
-      if (protocol === 'ipfs:' &&  ((method === 'POST') || (method === 'PUT'))) {
+      if (protocol === 'ipfs:' && ((method === 'POST') || (method === 'PUT'))) {
         // Handle multipart formdata uploads
         const contentType = reqHeaders['Content-Type'] || reqHeaders['content-type']
         const isFormData = contentType && contentType.includes('multipart/form-data')

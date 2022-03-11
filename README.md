@@ -69,26 +69,30 @@ This is useful for getting the `Content-Length` or checking if a file exists.
 
 You can specify the `Range` header when making a request to load a subset of a file.
 
-### `await fetch('ipfs:///example.txt', {methhod: 'post', body: 'Hello World!'})`
+### `await fetch('ipfs://bafyaabakaieac/example.txt', {methhod: 'put', body: 'Hello World!'})`
 
-You can upload files to IPFS by using `POST` messages.
+You can upload files to IPFS by using `PUT` messages.
 
 The response body will contain the `ipfs://` URL for your data.
 
-### `await fetch('ipfs:///example/', {method: 'post', body: new FormData()})`
+Note that `ipfs://bafyaabakaieac/` is a IPFS URL representing an empty directory (using an inline definition).
 
-You can upload several files to IPFS by using POST messages with a [FormData](https://developer.mozilla.org/en-US/docs/Web/API/FormData) body.
+### `await fetch('ipfs://bafyaabakaieac/', {method: 'put', body: new FormData()})`
+
+You can upload several files to IPFS by using PUT messages with a [FormData](https://developer.mozilla.org/en-US/docs/Web/API/FormData) body.
 
 You can [append](https://developer.mozilla.org/en-US/docs/Web/API/FormData) to a FormData with `formData.append(fieldname, content, 'filename.txt')` where `fieldname` gets ignored (use something like `file`?), the `content` can either be a String, Blob, or some sort of stream.
 The `filename` will be the filename inside the IPFS directory that gets created.
 
 The response body will contain the `ipfs://` URL for the directory with your files.
 
+Note that `ipfs://bafyaabakaieac/` is a IPFS URL representing an empty directory (using an inline definition).
+
 ### `await fetch('ipns://CID/example.txt')`
 
 You can specify an IPNS URL to have it resolve to whatever resource you wanted using the Inter-Planetary Naming System
 
-### `await fetch('ipns://KEY_NAME', {method: 'POST', body: 'ipfs://CID/example.txt'})`
+### `await fetch('ipns://KEY_NAME/', {method: 'POST', body: 'ipfs://CID/example.txt'})`
 
 You can publish to IPNS using the `POST` method.
 
@@ -103,9 +107,9 @@ If the key doesn't exist, it will ge generated.
 
 Please open a GitHub issue if you have ideas for how to do key import and export.
 
-### `await fetch('ipns://KEY_NAME/example.txt', {method: 'POST', body: 'Hello World!'})`
+### `await fetch('ipns://KEY_NAME/example.txt', {method: 'PUT', body: 'Hello World!'})`
 
-You can update some data in an IPNS directory using the `POST` method and a file path.
+You can update some data in an IPNS directory using the `PUT` method and a file path.
 
 The `body` should be the contents of your file.
 
@@ -113,7 +117,7 @@ If this IPNS key has already had some data published under it, the CID for the d
 
 This enables you to have mutable folders of data on top of IPFS+IPNS without having to juggle CIDs and merge data in your application.
 
-### `await fetch('ipns://KEY_NAME/example', {method: 'POST', body: new FormData()})`
+### `await fetch('ipns://KEY_NAME/example', {method: 'PUT', body: new FormData()})`
 
 You can upload several files to IPNS using the `POST` with a FormData body.
 
