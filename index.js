@@ -92,6 +92,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
               const result = ipfs.files.write(finalPath, Readable.from(fileData), {
                 cidVersion: 1,
                 parents: true,
+                truncate: true,
                 create: true,
                 rawLeaves: false,
                 signal
@@ -121,6 +122,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         await ipfs.files.write(path, Readable.from(content), {
           signal,
           parents: true,
+          truncate: true,
           create: true,
           rawLeaves: false,
           cidVersion: 1

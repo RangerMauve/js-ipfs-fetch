@@ -311,6 +311,61 @@ test('POST a file into IPFS', async (t) => {
   }
 })
 
+test.only('PUT a file and overwrite it', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const TO_ADD = 'This should be entirely replaced'
+
+    const response = await fetch(`${EMPTY_DIR_URL}/example.txt`, {
+      method: 'put',
+      body: TO_ADD
+    })
+
+    t.ok(response, 'Got a response object')
+    t.equal(response.status, 200, 'Got OK in response')
+
+    const ipfsUri = await response.text()
+    t.match(ipfsUri, /^ipfs:\/\/\w+\/example.txt$/, 'returned IPFS url with CID')
+
+    const fileResponse = await fetch(ipfsUri)
+    t.equal(fileResponse.status, 200, 'Got OK in response')
+
+    const text = await fileResponse.text()
+    t.equal(text, TO_ADD, 'Able to load uploaded file')
+
+    const REPLACE_WITH = 'Yup'
+
+    const updateResponse = await fetch(ipfsUri, {
+      method: 'put',
+      body: REPLACE_WITH
+    })
+
+    t.equal(updateResponse.status, 200, 'Got OK in response')
+    const updatedURi = await updateResponse.text()
+    t.match(updatedURi, /^ipfs:\/\/\w+\/example.txt$/, 'returned IPFS url with CID')
+
+    const updatedFileResponse = await fetch(updatedURi)
+    t.equal(updatedFileResponse.status, 200, 'Got OK in response')
+
+    const updatedText = await updatedFileResponse.text()
+
+    t.equal(updatedText, REPLACE_WITH, 'Fully replaced content')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
 test('PUT formdata to IPFS', async (t) => {
   let ipfs = null
   try {
