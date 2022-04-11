@@ -24,7 +24,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
     headers.Allow = SUPPORTED_METHODS.join(', ')
 
     async function getStat (path) {
-      return exporter(path, ipfs.block, { signal, preload: false, ipfsTimeout })
+      return exporter(path, ipfs.block, { signal, preload: false, timeout: ipfsTimeout })
     }
 
     async function serveFile (path = ipfsPath) {
@@ -48,14 +48,14 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           return {
             statusCode: 206,
             headers,
-            data: ipfs.cat(path, { signal, offset: start, length, ipfsTimeout })
+            data: ipfs.cat(path, { signal, offset: start, length, timeout: ipfsTimeout })
           }
         } else {
           headers['Content-Length'] = `${size}`
           return {
             statusCode: 200,
             headers,
-            data: ipfs.cat(path, { signal, ipfsTimeout })
+            data: ipfs.cat(path, { signal, timeout: ipfsTimeout })
           }
         }
       } else {
@@ -63,7 +63,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         return {
           statusCode: 200,
           headers,
-          data: ipfs.cat(path, { signal, ipfsTimeout })
+          data: ipfs.cat(path, { signal, timeout: ipfsTimeout })
         }
       }
     }
@@ -77,7 +77,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           parents: true,
           cidVersion: 1,
           signal,
-          ipfsTimeout
+          timeout: ipfsTimeout
         })
       }
 
@@ -99,7 +99,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
                 create: true,
                 rawLeaves: false,
                 signal,
-                ipfsTimeout
+                timeout: ipfsTimeout
               })
               push(result)
             } catch (e) {
@@ -130,11 +130,11 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           create: true,
           rawLeaves: false,
           cidVersion: 1,
-          ipfsTimeout
+          timeout: ipfsTimeout
         })
       }
 
-      const { cid } = await ipfs.files.stat(tmpDir, { hash: true, signal, ipfsTimeout })
+      const { cid } = await ipfs.files.stat(tmpDir, { hash: true, signal, timeout: ipfsTimeout })
 
       const cidHash = cid.toString()
       const endPath = isFormData ? relativePath : stripEndingSlash(relativePath)
@@ -149,7 +149,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       let mainSegment = segments[1]
 
       if (!mainSegment.includes('.')) {
-        const keys = await ipfs.key.list({ signal, ipnsTimeout })
+        const keys = await ipfs.key.list({ signal, timeout: ipnsTimeout })
         const keyForName = keys.find(({ name }) => name === mainSegment)
         if (keyForName) {
           mainSegment = keyForName.id + '/'
@@ -157,12 +157,12 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       }
 
       const toResolve = `/ipns${ensureEndingSlash(ensureStartingSlash(mainSegment))}`
-      const resolved = await ipfs.resolve(toResolve, { signal, ipnsTimeout })
+      const resolved = await ipfs.resolve(toResolve, { signal, timeout: ipnsTimeout })
       return [resolved, ...segments.slice(2)].join('/')
     }
 
     async function updateIPNS (keyName, value) {
-      const keys = await ipfs.key.list({ signal, ipnsTimeout })
+      const keys = await ipfs.key.list({ signal, timeout: ipnsTimeout })
       const existing = keys.find(({ name, id }) => {
         if (name === keyName) return true
         try {
@@ -176,7 +176,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           signal,
           type: 'rsa',
           size: 2048,
-          ipnsTimeout
+          timeout: ipnsTimeout
         })
       }
 
@@ -186,7 +186,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         allowOffline: true,
         key: finalName,
         signal,
-        ipnsTimeout
+        timeout: ipnsTimeout
       })
       const { name: cid } = publish
 
@@ -220,7 +220,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         if (stat.type === 'directory') {
           // TODO: Something for directories?
           if (!searchParams.has('noResolve')) {
-            const stats = await collect(ipfs.ls(ipfsPath, { signal, ipfsTimeout }))
+            const stats = await collect(ipfs.ls(ipfsPath, { signal, timeout: ipfsTimeout }))
             const files = stats.map(({ name, type }) => (type === 'dir') ? `${name}/` : name)
             if (files.includes('index.html')) {
               ipfsPath = posixPath.join(ipfsPath, 'index.html')
@@ -259,7 +259,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           let data = null
 
           try {
-            const stats = await collect(ipfs.ls(ipfsPath, { signal, ipfsTimeout }))
+            const stats = await collect(ipfs.ls(ipfsPath, { signal, timeout: ipfsTimeout }))
             const files = stats.map(({ name, type }) => (type === 'dir') ? `${name}/` : name)
 
             if (files.includes('index.html')) {
@@ -346,7 +346,7 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
             parents: true,
             cidVersion: 1,
             signal,
-            ipfsTimeout
+            timeout: ipfsTimeout
           })
         }
 
@@ -354,13 +354,13 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
           recursive: true,
           cidVersion: 1,
           signal,
-          ipfsTimeout
+          timeout: ipfsTimeout
         })
 
         const { cid } = await ipfs.files.stat(tmpDir, {
           hash: true,
           signal,
-          ipfsTimeout
+          timeout: ipfsTimeout
         })
 
         const cidHash = cid.toString()
