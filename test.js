@@ -63,6 +63,18 @@ test('Load a file via fetch', async (t) => {
     const text = await response.text()
 
     t.equal(text, TEST_DATA, 'Got expected file content')
+
+    const testTimeout = await fetch('ipfs://QmYCmKG1uJhimRqrjusTbwfGRhfbcKpTh2SKDBVwZFRC5e')
+
+    t.ok(testTimeout, 'Got a response object')
+    t.equal(testTimeout.status, 500, 'Got OK in response')
+
+    const contentTimeout = testTimeout.headers.get('Content-Type')
+    t.equal(contentTimeout, 'text/plain; charset=utf-8', 'Got expected content type')
+
+    const textTimeout = await testTimeout.text()
+
+    t.equal(textTimeout, TEST_DATA, 'Got expected file content')
   } finally {
     try {
       if (ipfs) await ipfs.stop()
@@ -680,6 +692,37 @@ test('Resolve IPNS', async (t) => {
     const dnsResponse = await fetch('ipns://ipfs.io/')
 
     t.ok(dnsResponse.ok, 'Able to resolve ipfs.io')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('Testing the timeout option', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const testTimeout = await fetch('ipfs://QmYCmKG1uJhimRqrjusTbwfGRhfbcKpTh2SKDBVwZFRC5e')
+
+    t.ok(testTimeout, 'Got a response object')
+    t.equal(testTimeout.status, 500, 'Got OK in response')
+
+    const contentTimeout = testTimeout.headers.get('Content-Type')
+    t.equal(contentTimeout, 'text/plain; charset=utf-8', 'Got expected content type')
+
+    const textTimeout = (await testTimeout.text()).substring(0, 'TimeoutError: request timed out'.length)
+    const TEST_DATA = 'TimeoutError: request timed out'
+
+    t.equal(textTimeout, TEST_DATA, 'Got expected response text')
   } finally {
     try {
       if (ipfs) await ipfs.stop()
