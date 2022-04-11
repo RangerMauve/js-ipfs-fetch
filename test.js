@@ -63,18 +63,6 @@ test('Load a file via fetch', async (t) => {
     const text = await response.text()
 
     t.equal(text, TEST_DATA, 'Got expected file content')
-
-    const testTimeout = await fetch('ipfs://QmYCmKG1uJhimRqrjusTbwfGRhfbcKpTh2SKDBVwZFRC5e')
-
-    t.ok(testTimeout, 'Got a response object')
-    t.equal(testTimeout.status, 500, 'Got OK in response')
-
-    const contentTimeout = testTimeout.headers.get('Content-Type')
-    t.equal(contentTimeout, 'text/plain; charset=utf-8', 'Got expected content type')
-
-    const textTimeout = await testTimeout.text()
-
-    t.equal(textTimeout, TEST_DATA, 'Got expected file content')
   } finally {
     try {
       if (ipfs) await ipfs.stop()
@@ -711,16 +699,16 @@ test('Testing the timeout option', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const testTimeout = await fetch('ipfs://QmYCmKG1uJhimRqrjusTbwfGRhfbcKpTh2SKDBVwZFRC5e')
+    const testTimeout = await fetch('ipfs://QmdKG3QikU5jTYiXuaQDLkbiYd5gfc7kdycYx6Axx6vvtt')
 
     t.ok(testTimeout, 'Got a response object')
     t.equal(testTimeout.status, 500, 'Got OK in response')
 
     const contentTimeout = testTimeout.headers.get('Content-Type')
-    t.equal(contentTimeout, 'text/plain; charset=utf-8', 'Got expected content type')
+    t.equal(contentTimeout, null, 'Got expected content type')
 
-    const textTimeout = (await testTimeout.text()).substring(0, 'TimeoutError: request timed out'.length)
-    const TEST_DATA = 'TimeoutError: request timed out'
+    const textTimeout = (await testTimeout.text()).substring(0, 'TimeoutError:'.length)
+    const TEST_DATA = 'TimeoutError:'
 
     t.equal(textTimeout, TEST_DATA, 'Got expected response text')
   } finally {
