@@ -379,7 +379,15 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         }
       }
     } catch (e) {
-      const statusCode = e.code === 'ERR_NOT_FOUND' ? 404 : 500
+      const statusCode = (() => {
+        if(e.code === 'ERR_NOT_FOUND'){
+          return 404
+        } else if(e.name === 'TimeoutError'){
+          return 408
+        } else {
+          return 500
+        }
+      })(e)
       console.error(e.stack)
       return {
         statusCode,
