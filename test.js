@@ -701,8 +701,8 @@ test('Testing the timeout option', async (t) => {
 
     const testTimeout = await fetch('ipfs://QmdKG3QikU5jTYiXuaQDLkbiYd5gfc7kdycYx6Axx6vvtt')
 
-    t.ok(testTimeout, 'Got a response object')
-    t.equal(testTimeout.status, 500, 'Got OK in response')
+    t.ok(testTimeout, 'Got an error in response')
+    t.equal(testTimeout.status, 500, 'Response is not OK')
 
     const contentTimeout = testTimeout.headers.get('Content-Type')
     t.equal(contentTimeout, null, 'Got expected content type')
