@@ -710,7 +710,7 @@ test('Testing the timeout option', async (t) => {
     const textTimeout = (await testTimeout.text()).substring(0, 'TimeoutError:'.length)
     const TEST_DATA = 'TimeoutError:'
 
-    t.equal(textTimeout, TEST_DATA, 'Got expected response text')
+    t.equal(textTimeout, TEST_DATA, 'Got an error as a response')
   } finally {
     try {
       if (ipfs) await ipfs.stop()
