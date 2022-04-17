@@ -690,6 +690,37 @@ test('Resolve IPNS', async (t) => {
   }
 })
 
+test('Testing the timeout option', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const testTimeout = await fetch('ipfs://QmdKG3QikU5jTYiXuaQDLkbiYd5gfc7kdycYx6Axx6vvtt')
+
+    t.ok(testTimeout, 'Got an error in response')
+    t.equal(testTimeout.status, 408, 'Response is not OK')
+
+    const contentTimeout = testTimeout.headers.get('Content-Type')
+    t.equal(contentTimeout, null, 'Got expected content type')
+
+    const textTimeout = (await testTimeout.text()).substring(0, 'TimeoutError:'.length)
+    const TEST_DATA = 'TimeoutError:'
+
+    t.equal(textTimeout, TEST_DATA, 'Got an error as a response')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
 async function collect (iterable) {
   const results = []
   for await (const item of iterable) {
