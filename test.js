@@ -55,7 +55,7 @@ test('Load a file via fetch', async (t) => {
     const response = await fetch(`ipfs://${cid}/example.txt`)
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
     const contentType = response.headers.get('Content-Type')
     t.equal(contentType, 'text/plain; charset=utf-8', 'Got expected content type')
@@ -87,7 +87,7 @@ test('Load a file from just the CID', async (t) => {
     const response = await fetch(`ipfs://${cid}/`)
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
     const contentType = response.headers.get('Content-Type')
     t.equal(contentType, 'text/plain; charset=utf-8', 'Got expected content type')
@@ -148,7 +148,7 @@ test('Get expected headers from HEAD', async (t) => {
     const response = await fetch(`ipfs://${cid}`, { method: 'head' })
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
     const size = response.headers.get('Content-Length')
     t.equal(size, TEST_DATA.length.toString(), 'Got expected content length')
@@ -186,7 +186,7 @@ test('Load a directory listing via fetch', async (t) => {
     })
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
     const text = await response.text()
 
@@ -196,7 +196,7 @@ test('Load a directory listing via fetch', async (t) => {
 
     const jsonResponse = await fetch(`ipfs://${cid}/`)
 
-    t.equal(jsonResponse.status, 200, 'Got OK in response')
+    t.ok(jsonResponse.ok, 'Got OK in response')
 
     const files = await jsonResponse.json()
 
@@ -231,7 +231,7 @@ test('Resolve index.html from a directory', async (t) => {
     const response = await fetch(`ipfs://${cid}/`)
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
     const text = await response.text()
 
@@ -239,7 +239,7 @@ test('Resolve index.html from a directory', async (t) => {
 
     const rawResponse = await fetch(`ipfs://${cid}/?noResolve`)
 
-    t.equal(rawResponse.status, 200, 'Got OK in response')
+    t.ok(rawResponse.ok, 'Got OK in response')
 
     const files = await rawResponse.json()
 
@@ -248,7 +248,7 @@ test('Resolve index.html from a directory', async (t) => {
     const subfolderResponse = await fetch(`ipfs://${cid}/example`)
 
     t.ok(subfolderResponse, 'Got a response object')
-    t.equal(subfolderResponse.status, 200, 'Got OK in response')
+    t.ok(subfolderResponse.ok, 'Got OK in response')
 
     const text2 = await subfolderResponse.text()
 
@@ -264,7 +264,7 @@ test('Resolve index.html from a directory', async (t) => {
 })
 
 // This should be deprecated?
-test('POST a file into IPFS', async (t) => {
+test.skip('POST a file into IPFS', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -279,13 +279,13 @@ test('POST a file into IPFS', async (t) => {
     })
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
     const ipfsUri = await response.text()
     t.match(ipfsUri, /^ipfs:\/\/\w+\/example.txt$/, 'returned IPFS url with CID')
 
     const fileResponse = await fetch(ipfsUri)
-    t.equal(fileResponse.status, 200, 'Got OK in response')
+    t.ok(fileResponse.ok, 'Got OK in response')
 
     const text = await fileResponse.text()
     t.equal(text, TEST_DATA, 'Able to load POSTed file')
@@ -311,7 +311,7 @@ test('POST a file into IPFS', async (t) => {
   }
 })
 
-test.only('PUT a file and overwrite it', async (t) => {
+test('PUT a file and overwrite it', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -328,13 +328,13 @@ test.only('PUT a file and overwrite it', async (t) => {
     })
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
-    const ipfsUri = await response.text()
+    const ipfsUri = response.headers.get('Location')
     t.match(ipfsUri, /^ipfs:\/\/\w+\/example.txt$/, 'returned IPFS url with CID')
 
     const fileResponse = await fetch(ipfsUri)
-    t.equal(fileResponse.status, 200, 'Got OK in response')
+    t.ok(fileResponse.ok, 'Got OK in response')
 
     const text = await fileResponse.text()
     t.equal(text, TO_ADD, 'Able to load uploaded file')
@@ -346,12 +346,12 @@ test.only('PUT a file and overwrite it', async (t) => {
       body: REPLACE_WITH
     })
 
-    t.equal(updateResponse.status, 200, 'Got OK in response')
-    const updatedURi = await updateResponse.text()
-    t.match(updatedURi, /^ipfs:\/\/\w+\/example.txt$/, 'returned IPFS url with CID')
+    t.ok(updateResponse.ok, 'Got OK in response')
+    const updatedURL = updateResponse.headers.get('Location')
+    t.match(updatedURL, /^ipfs:\/\/\w+\/example.txt$/, 'returned IPFS url with CID')
 
-    const updatedFileResponse = await fetch(updatedURi)
-    t.equal(updatedFileResponse.status, 200, 'Got OK in response')
+    const updatedFileResponse = await fetch(updatedURL)
+    t.ok(updatedFileResponse.ok, 'Got OK in response')
 
     const updatedText = await updatedFileResponse.text()
 
@@ -395,9 +395,9 @@ test('PUT formdata to IPFS', async (t) => {
     })
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
-    const ipfsUri = await response.text()
+    const ipfsUri = response.headers.get('Location')
     t.match(ipfsUri, /ipfs:\/\/\w+\//, 'returned IPFS url with CID')
 
     const directoryResponse = await fetch(`${ipfsUri}?noResolve`)
@@ -428,12 +428,12 @@ test('PUT to a CID', async (t) => {
 
     // Formerly 'ipfs:///example.txt`
     // Needed to change because a single filename gets interpreted as the hostname
-    const response1 = await fetch('ipfs://example.txt/', {
+    const response1 = await fetch(`${EMPTY_DIR_URL}/example.txt`, {
       method: 'post',
       body: TEST_DATA
     })
 
-    const firstURL = await response1.text()
+    const firstURL = response1.headers.get('Location')
 
     // Use different file name
     const response2 = await fetch(firstURL.replace('example.txt', 'example2.txt'), {
@@ -441,13 +441,13 @@ test('PUT to a CID', async (t) => {
       body: TEST_DATA
     })
 
-    t.equal(response2.status, 200, 'Got OK in response')
+    t.ok(response2.ok, 'Got OK in response')
 
-    const ipfsUri = await response2.text()
+    const ipfsUri = response2.headers.get('Location')
     t.match(ipfsUri, /^ipfs:\/\/\w+\/example2.txt$/, 'returned IPFS url with CID')
 
     const fileResponse = await fetch(ipfsUri)
-    t.equal(fileResponse.status, 200, 'Got OK in response')
+    t.ok(fileResponse.ok, 'Got OK in response')
 
     const text = await fileResponse.text()
     t.equal(text, TEST_DATA, 'Able to load uploaded file')
@@ -479,30 +479,41 @@ test('Publish and resolve IPNS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const dataURI = await (await fetch('ipfs:///example.txt', {
+    const dataURI = (await fetch(`${EMPTY_DIR_URL}/example.txt`, {
       method: 'post',
       body: TEST_DATA
-    })).text()
+    })).headers.get('Location')
     const folderURI = dataURI.slice(0, -('example.txt'.length))
 
-    const publishResponse = await fetch('ipns://put-file/', {
+    const makeKeyResponse = await fetch('ipns://localhost/?key=put-file', {
+      method: 'POST'
+    })
+
+    t.ok(makeKeyResponse.ok, 'Got OK in response')
+
+    const ipnsRoot = makeKeyResponse.headers.get('Location')
+
+    t.ok(ipnsRoot.startsWith('ipns://k'), 'Got created base36 encoded IPNS URL')
+
+    const publishResponse = await fetch(ipnsRoot, {
       method: 'post',
       body: folderURI
     })
 
-    t.equal(publishResponse.status, 200, 'Got OK in response')
+    t.ok(publishResponse.ok, 'Got OK in response')
 
-    const ipnsURI = await publishResponse.text()
+    const updatedURL = publishResponse.headers.get('Location')
 
-    t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
+    t.ok(updatedURL.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
+    t.equal(updatedURL, ipnsRoot, 'Got same public key after update')
 
-    const resolvedResponse = await fetch(ipnsURI, {
+    const resolvedResponse = await fetch(updatedURL, {
       headers: {
         Accept: 'application/json'
       }
     })
 
-    t.equal(resolvedResponse.status, 200, 'Got OK in response')
+    t.ok(resolvedResponse.ok, 'Got OK in response')
 
     const files = await resolvedResponse.json()
     t.deepEqual(files, ['example.txt'], 'resolved files')
@@ -525,6 +536,14 @@ test('PUT FormData to IPNS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
+    const makeKeyResponse = await fetch('ipns://localhost/?key=put-file', {
+      method: 'POST'
+    })
+
+    t.ok(makeKeyResponse.ok, 'Got OK in response')
+
+    const ipnsRoot = makeKeyResponse.headers.get('Location')
+
     const form = new FormData()
 
     form.append('file', TEST_DATA, {
@@ -538,14 +557,14 @@ test('PUT FormData to IPNS', async (t) => {
     const body = form.getBuffer()
     const headers = form.getHeaders()
 
-    const response = await fetch('ipns://put-form/', {
+    const response = await fetch(ipnsRoot, {
       method: 'put',
       headers,
       body
     })
 
     t.ok(response, 'Got a response object')
-    t.equal(response.status, 200, 'Got OK in response')
+    t.ok(response.ok, 'Got OK in response')
 
     const ipnsUri = await response.text()
     t.match(ipnsUri, /ipns:\/\/\w+\//, 'returned IPFS url with CID')
@@ -582,12 +601,20 @@ test('PUT file to update IPNS', async (t) => {
     })).text()
     const folderURI = dataURI.slice(0, -('example.txt'.length))
 
-    const publishResponse = await fetch('ipns://update-file/', {
+    const makeKeyResponse = await fetch('ipns://localhost/?key=update-file', {
+      method: 'POST'
+    })
+
+    t.ok(makeKeyResponse.ok, 'Got OK in response')
+
+    const ipnsRoot = makeKeyResponse.headers.get('Location')
+
+    const publishResponse = await fetch(ipnsRoot, {
       method: 'post',
       body: folderURI
     })
 
-    t.equal(publishResponse.status, 200, 'Got OK in response')
+    t.ok(publishResponse.ok, 'Got OK in response')
 
     const ipnsURI = await publishResponse.text()
 
@@ -598,7 +625,7 @@ test('PUT file to update IPNS', async (t) => {
       body: TEST_DATA
     })
 
-    t.equal(putResponse.status, 200, 'Able to upload to IPNS url with data')
+    t.ok(putResponse.ok, 'Able to upload to IPNS url with data')
 
     const ipnsURI2 = await putResponse.text()
 
@@ -610,7 +637,7 @@ test('PUT file to update IPNS', async (t) => {
       }
     })
 
-    t.equal(resolvedResponse.status, 200, 'Got OK in response')
+    t.ok(resolvedResponse.ok, 'Got OK in response')
 
     const files = await resolvedResponse.json()
     t.deepEqual(files, ['example.txt', 'example2.txt'], 'resolved files')
@@ -645,15 +672,15 @@ test('DELETE from IPFS URL', async (t) => {
       method: 'DELETE'
     })
 
-    t.equal(deleteResponse.status, 200, 'Got OK in response')
+    t.ok(deleteResponse.ok, 'Got OK in response')
 
-    const url = await deleteResponse.text()
+    const url = deleteResponse.headers.get('Location')
 
     t.ok(url.startsWith('ipfs://b'), 'Got base32 encoded IPFS url')
 
     const directoryResponse = await fetch(url)
 
-    t.equal(directoryResponse.status, 200, 'Able to GET new directory')
+    t.ok(directoryResponse.ok, 'Able to GET new directory')
 
     const files = await directoryResponse.json()
 

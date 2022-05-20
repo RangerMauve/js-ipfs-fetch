@@ -3,6 +3,7 @@ const parseRange = require('range-parser')
 const mime = require('mime/lite')
 const { CID } = require('multiformats/cid')
 const { base32 } = require('multiformats/bases/base32')
+const { base36 } = require('multiformats/bases/base36')
 const Busboy = require('busboy')
 const { Readable } = require('stream')
 const { EventIterator } = require('event-iterator')
@@ -10,11 +11,18 @@ const crypto = require('crypto')
 const posixPath = require('path').posix
 const { exporter } = require('ipfs-unixfs-exporter')
 
-const ipfsTimeout = 30000
-const ipnsTimeout = 120000
-const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE']
+const bases = base32.decoder.or(base36.decoder)
 
-module.exports = function makeIPFSFetch ({ ipfs }) {
+const IPFS_TIMEOUT = 30000
+const IPNS_TIMEOUT = 120000
+const SUPPORTED_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE']
+const SPECIAL_HOSTNAME = 'localhost'
+
+module.exports = function makeIPFSFetch ({
+  ipfs,
+  ipfsTimeout = IPFS_TIMEOUT,
+  ipnsTimeout = IPNS_TIMEOUT
+}) {
   return makeFetch(async ({ url, headers: reqHeaders, method, signal, body }) => {
     const { hostname, pathname, protocol, searchParams } = new URL(url)
     let ipfsPath = hostname ? hostname + pathname : pathname.slice(1)
@@ -161,23 +169,31 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       return [resolved, ...segments.slice(2)].join('/')
     }
 
-    async function updateIPNS (keyName, value) {
+    async function genKey (keyName) {
+      await ipfs.key.gen(keyName, {
+        signal,
+        type: 'rsa',
+        size: 2048,
+        timeout: ipnsTimeout
+      })
+    }
+
+    async function hasKey (keyName) {
       const keys = await ipfs.key.list({ signal, timeout: ipnsTimeout })
-      const existing = keys.find(({ name, id }) => {
+      return keys.find(({ name, id }) => {
         if (name === keyName) return true
         try {
-          return (CID.parse(id).toV1().toString(base32) === keyName)
+          return (CID.parse(id, bases).toV1().toString(base36) === keyName)
         } catch {
           return false
         }
       })
+    }
+
+    async function updateIPNS (keyName, value) {
+      const existing = await hasKey(keyName)
       if (!existing) {
-        await ipfs.key.gen(keyName, {
-          signal,
-          type: 'rsa',
-          size: 2048,
-          timeout: ipnsTimeout
-        })
+        await genKey(keyName)
       }
 
       const finalName = existing ? existing.name : keyName
@@ -191,24 +207,159 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       const { name: cid } = publish
 
       const ipnsURL = `ipns://${cid}/`
+      headers.Location = ipnsURL
 
       return {
-        statusCode: 200,
+        statusCode: 201,
         headers,
         data: intoAsyncIterable(ipnsURL)
       }
     }
 
     try {
-      if (protocol === 'ipfs:' && ((method === 'POST') || (method === 'PUT'))) {
+      if (protocol === 'pubsub:') {
+        const topic = hostname
+        if (method === 'GET') {
+          const format = searchParams.get('format')
+          const accept = reqHeaders.Accept || reqHeaders.accept
+          if (accept && accept.includes('text/event-stream')) {
+            const events = new EventIterator(({ push, fail }) => {
+              function handler ({ from, sequenceNumber, data, topicIDs: topics }) {
+                const id = sequenceNumber.toString()
+                let formatted = null
+                if (format === 'json') {
+                  formatted = JSON.parse(Buffer.from(data).toString('utf8'))
+                } else if (format === 'utf8') {
+                  formatted = Buffer.from(data).toString('utf8')
+                } else {
+                  formatted = Buffer.from(data).toString('base64')
+                }
+
+                const eventData = JSON.stringify({
+                  from,
+                  topics,
+                  data: formatted
+                })
+
+                push(`id:${id}\ndata:${eventData}\n\n`)
+              }
+              ipfs.pubsub.subscribe(topic, handler).catch((e) => {
+                fail(e)
+              })
+              return () => ipfs.pubsub.unsubscribe(topic, handler)
+            })
+
+            headers['Content-Type'] = 'text/event-stream'
+
+            return {
+              statusCode: 200,
+              headers,
+              data: events
+            }
+          } else {
+            const id = await ipfs.id()
+            const subs = await ipfs.pubsub.ls()
+            const subscribed = subs.includes(topic)
+
+            headers['Content-Type'] = 'application/json'
+
+            return {
+              statusCode: 200,
+              headers,
+              data: intoAsyncIterable(JSON.stringify({
+                id,
+                topic,
+                subscribed
+              }, null, '\t'))
+            }
+          }
+        } else if (method === 'POST') {
+          const payload = await collect(body)
+          // TODO: Handle oversized messages wihth 413
+          await ipfs.pubsub.publish(topic, payload, {
+            signal,
+            timeout: ipfsTimeout
+          })
+
+          return {
+            statusCode: 200,
+            headers,
+            data: intoAsyncIterable('')
+          }
+        }
+      } else if (hostname === SPECIAL_HOSTNAME) {
+        if (protocol === 'ipns:') {
+          const key = searchParams.get('key')
+
+          if (method === 'GET') {
+            const exists = await hasKey(key)
+            if (!exists) {
+              return {
+                statusCode: 404,
+                headers,
+                data: intoAsyncIterable('Key Not Found')
+              }
+            } else {
+              const keyURL = keyToURL(exists)
+              headers.Location = keyURL
+              return {
+                statusCode: 302,
+                headers,
+                data: intoAsyncIterable(keyURL)
+              }
+            }
+          } else if (method === 'POST') {
+            // Localhost is used for generating keys
+            const exists = await hasKey(key)
+            if (!exists) {
+              await genKey(key)
+            }
+            const keyData = await hasKey(key)
+            const keyURL = keyToURL(keyData)
+            headers.Location = keyURL
+
+            return {
+              statusCode: 201,
+              headers,
+              data: intoAsyncIterable('')
+            }
+          } else if (method === 'DELETE') {
+            await ipfs.key.rm(key, {
+              signal,
+              timeout: ipfsTimeout
+            })
+
+            return {
+              statusCode: 200,
+              headers,
+              body: intoAsyncIterable('')
+            }
+          } else {
+            return {
+              statusCode: 405,
+              headers,
+              data: intoAsyncIterable('Method Not Supported')
+            }
+          }
+        } else {
+          return {
+            statusCode: 405,
+            headers,
+            data: intoAsyncIterable('Protocol not supported for localhost')
+          }
+        }
+      } else if (protocol === 'ipfs:' && ((method === 'POST') || (method === 'PUT'))) {
+        // TODO: Deprecate using POST to upload data, use PUT instead
         // Handle multipart formdata uploads
         const contentType = reqHeaders['Content-Type'] || reqHeaders['content-type']
         const isFormData = contentType && contentType.includes('multipart/form-data')
 
         const addedURL = await uploadData(ipfsPath, body, isFormData)
 
+        headers.Location = addedURL
+
         return {
-          statusCode: 200,
+          statusCode: 201,
           headers,
           data: intoAsyncIterable(addedURL)
         }
@@ -366,6 +517,8 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
         const cidHash = cid.toString()
         const addedURL = `ipfs://${cidHash}/`
 
+        headers.Location = addedURL
+
         return {
           statusCode: 200,
           headers,
@@ -380,9 +533,9 @@ module.exports = function makeIPFSFetch ({ ipfs }) {
       }
     } catch (e) {
       const statusCode = (() => {
-        if(e.code === 'ERR_NOT_FOUND'){
+        if (e.code === 'ERR_NOT_FOUND') {
           return 404
-        } else if(e.name === 'TimeoutError'){
+        } else if (e.name === 'TimeoutError') {
           return 408
         } else {
           return 500
@@ -449,7 +602,7 @@ function cidFromPath (path) {
   try {
     const cidComponent = components[0]
     const relativePath = components.slice(1).join('/')
-    const rootCID = CID.parse(cidComponent)
+    const rootCID = CID.parse(cidComponent, bases)
     return {
       rootCID,
       relativePath
@@ -460,4 +613,9 @@ function cidFromPath (path) {
       relativePath: path
     }
   }
+}
+
+function keyToURL ({ id }) {
+  const hostname = CID.parse(id, bases).toV1().toString(base36)
+  return `ipns://${hostname}/`
 }
