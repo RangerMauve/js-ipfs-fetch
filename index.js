@@ -341,6 +341,53 @@ module.exports = function makeIPFSFetch ({
               data: intoAsyncIterable('Method Not Supported')
             }
           }
+        } else if (protocol === 'ipfs:') {
+          // POST but for the root
+          if (method === 'POST') {
+            const contentType = reqHeaders['Content-Type'] || reqHeaders['content-type']
+            const isFormData = contentType && contentType.includes('multipart/form-data')
+            const isCAR = contentType && contentType.includes('application/vnd.ipld.car')
+
+            if (isCAR) {
+              const results = []
+              const importOpts = { timeout: ipfsTimeout, pinRoots: false }
+              for await (const { root } of ipfs.dag.import(body, importOpts)) {
+                const { cid } = root
+
+                const cidHash = cid.toString()
+                const addedURL = `ipfs://${cidHash}/`
+
+                results.push(addedURL)
+              }
+
+              return {
+                statusCode: 200,
+                headers,
+                data: intoAsyncIterable(results.join('\n'))
+              }
+            }
+            const dir = '/ipfs/bafyaabakaieac/localhost'
+            const addedURLRaw = await uploadData(dir, body, isFormData, isCAR)
+            // Resolve the localhost thing back to the root CID
+            const { cid } = await ipfs.dag.resolve(addedURLRaw.replace('ipfs://', '/ipfs/'))
+
+            const cidHash = cid.toString()
+            const addedURL = `ipfs://${cidHash}/`
+
+            headers.Location = addedURL
+
+            return {
+              statusCode: 201,
+              headers,
+              data: intoAsyncIterable(addedURL)
+            }
+          } else {
+            return {
+              statusCode: 405,
+              headers,
+              data: intoAsyncIterable('Method Not Supported')
+            }
+          }
         } else {
           return {
             statusCode: 405,

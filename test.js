@@ -264,7 +264,7 @@ test('Resolve index.html from a directory', async (t) => {
 })
 
 // This should be deprecated?
-test.skip('POST a file into IPFS', async (t) => {
+test('POST a file into IPFS', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -273,7 +273,7 @@ test.skip('POST a file into IPFS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const response = await fetch('ipfs://example.txt/', {
+    const response = await fetch('ipfs://localhost/', {
       method: 'post',
       body: TEST_DATA
     })
@@ -282,25 +282,13 @@ test.skip('POST a file into IPFS', async (t) => {
     t.ok(response.ok, 'Got OK in response')
 
     const ipfsUri = await response.text()
-    t.match(ipfsUri, /^ipfs:\/\/\w+\/example.txt$/, 'returned IPFS url with CID')
+    t.match(ipfsUri, /^ipfs:\/\/\w+\/$/, 'returned IPFS url with CID')
 
     const fileResponse = await fetch(ipfsUri)
     t.ok(fileResponse.ok, 'Got OK in response')
 
     const text = await fileResponse.text()
     t.equal(text, TEST_DATA, 'Able to load POSTed file')
-
-    /**
-    // MFS uses different CIDs?
-    const { cid } = await ipfs.add({
-      path: 'example.txt',
-      content: TEST_DATA
-    }, {
-      cidVersion: 1,
-      wrapWithDirectory: true
-    })
-    t.equal(ipfsUri.match(/ipfs:\/\/([^/]+)/)[1], cid.toString('base32'), 'Matches cid from ipfs.add')
-    **/
   } finally {
     try {
       if (ipfs) await ipfs.stop()
@@ -366,7 +354,7 @@ test('PUT a file and overwrite it', async (t) => {
   }
 })
 
-test('PUT formdata to IPFS', async (t) => {
+test('PUT formdata to IPFS cid', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -390,6 +378,57 @@ test('PUT formdata to IPFS', async (t) => {
 
     const response = await fetch(EMPTY_DIR_URL, {
       method: 'put',
+      headers,
+      body
+    })
+
+    t.ok(response, 'Got a response object')
+    t.ok(response.ok, 'Got OK in response')
+
+    const ipfsUri = response.headers.get('Location')
+    t.match(ipfsUri, /ipfs:\/\/\w+\//, 'returned IPFS url with CID')
+
+    const directoryResponse = await fetch(`${ipfsUri}?noResolve`)
+
+    t.ok(directoryResponse.ok, 'Able to list directory')
+
+    const files = await directoryResponse.json()
+
+    t.deepEqual(files, ['example.txt', 'example2.txt'], 'Multiple files got uploaded')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('POST formdata to IPFS localhost', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const form = new FormData()
+
+    form.append('file', TEST_DATA, {
+      filename: 'example.txt'
+    })
+
+    form.append('file', TEST_DATA, {
+      filename: 'example2.txt'
+    })
+
+    const body = form.getBuffer()
+    const headers = form.getHeaders()
+
+    const response = await fetch('ipfs://localhost', {
+      method: 'post',
       headers,
       body
     })
@@ -460,6 +499,38 @@ test('PUT to a CID', async (t) => {
     const files = await dirResponse.json()
 
     t.deepEqual(files, ['example.txt', 'example2.txt'], 'Both files in CID directory')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('POST a CAR to localhost', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const dagCID = await ipfs.dag.put({ hello: 'world' }, { storeCodec: 'dag-cbor' })
+
+    const body = Buffer.concat(await collect(ipfs.dag.export(dagCID)))
+
+    const response = await fetch('ipfs://localhost/', {
+      headers: {
+        'Content-Type': 'application/vnd.ipld.car'
+      },
+      method: 'POST',
+      body
+    })
+
+    t.ok(response.ok, 'ok in response')
+
+    console.log(await response.text())
   } finally {
     try {
       if (ipfs) await ipfs.stop()
