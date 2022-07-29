@@ -4,7 +4,6 @@ const test = require('tape')
 const FormData = require('form-data')
 const makeIPFSFetch = require('./')
 const ipfsHttpModule = require('ipfs-http-client')
-const { base32 } = require('multiformats/bases/base32')
 
 const Ctl = require('ipfsd-ctl')
 const ipfsBin = require('go-ipfs').path()
@@ -195,7 +194,6 @@ test('Format string to get raw block', async (t) => {
   }
 })
 
-
 test('Accept header to get raw block', async (t) => {
   let ipfs = null
   try {
@@ -232,7 +230,6 @@ test('Accept header to get raw block', async (t) => {
   }
 })
 
-
 test('Format string to get car file', async (t) => {
   let ipfs = null
   try {
@@ -240,7 +237,7 @@ test('Format string to get car file', async (t) => {
 
     const fetch = await makeIPFSFetch({ ipfs })
 
-    const cid = await ipfs.dag.put({hello: 'world'})
+    const cid = await ipfs.dag.put({ hello: 'world' })
 
     const expected = Buffer.concat(await collect(ipfs.dag.export(cid)))
 
@@ -272,16 +269,16 @@ test('Accept header to get car file', async (t) => {
 
     const fetch = await makeIPFSFetch({ ipfs })
 
-    const cid = await ipfs.dag.put({hello: 'world'})
+    const cid = await ipfs.dag.put({ hello: 'world' })
 
     const expected = Buffer.concat(await collect(ipfs.dag.export(cid)))
 
     const url = `ipfs://${cid.toV1().toString()}/`
 
     const response = await fetch(url, {
-			headers: {
-			  Accept: "application/vnd.ipld.car"
-			}
+      headers: {
+        Accept: 'application/vnd.ipld.car'
+      }
     })
 
     t.ok(response.ok, 'got ok in response')
@@ -300,7 +297,6 @@ test('Accept header to get car file', async (t) => {
     }
   }
 })
-
 
 test('Load a directory listing via fetch', async (t) => {
   let ipfs = null

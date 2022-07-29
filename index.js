@@ -470,7 +470,7 @@ module.exports = function makeIPFSFetch ({
         }
 
         if (expectedType === 'car' || expectedType === 'application/vnd.ipld.car') {
-          const {cid} = await ipfs.dag.resolve(ipfsPath, {
+          const { cid } = await ipfs.dag.resolve(ipfsPath, {
             timeout: ipfsTimeout,
             signal
           })
