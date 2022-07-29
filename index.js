@@ -414,6 +414,7 @@ module.exports = function makeIPFSFetch ({
         if (protocol === 'ipns:') {
           ipfsPath = await resolveIPNS(ipfsPath)
         }
+        // TODO: Account for `?format` (can we even get content size without first downloading everything?
         const stat = await getStat(ipfsPath)
         if (stat.type === 'directory') {
           // TODO: Something for directories?
@@ -447,6 +448,45 @@ module.exports = function makeIPFSFetch ({
       } else if (method === 'GET') {
         if (protocol === 'ipns:') {
           ipfsPath = await resolveIPNS(ipfsPath)
+        }
+
+        const format = searchParams.get('format')
+        const accept = reqHeaders.Accept || reqHeaders.accept
+        const expectedType = format || accept
+
+        if (expectedType === 'raw' || expectedType === 'application/vnd.ipld.raw') {
+          const data = await ipfs.block.get(ipfsPath, {
+            timeout: ipfsTimeout,
+            signal
+          })
+
+          headers['Content-Type'] = 'application/vnd.ipld.raw'
+
+          return {
+            statusCode: 200,
+            headers,
+            data: intoAsyncIterable(data)
+          }
+        }
+
+        if (expectedType === 'car' || expectedType === 'application/vnd.ipld.car') {
+          const {cid} = await ipfs.dag.resolve(ipfsPath, {
+            timeout: ipfsTimeout,
+            signal
+          })
+          // must resolve to a CID to export, paths not supported here
+          const data = ipfs.dag.export(cid, {
+            timeout: ipfsTimeout,
+            signal
+          })
+
+          headers['Content-Type'] = 'application/vnd.ipld.car'
+
+          return {
+            statusCode: 200,
+            headers,
+            data
+          }
         }
 
         const stat = await getStat(ipfsPath)

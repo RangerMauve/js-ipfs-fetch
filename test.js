@@ -4,6 +4,7 @@ const test = require('tape')
 const FormData = require('form-data')
 const makeIPFSFetch = require('./')
 const ipfsHttpModule = require('ipfs-http-client')
+const { base32 } = require('multiformats/bases/base32')
 
 const Ctl = require('ipfsd-ctl')
 const ipfsBin = require('go-ipfs').path()
@@ -161,6 +162,145 @@ test('Get expected headers from HEAD', async (t) => {
     }
   }
 })
+
+test('Format string to get raw block', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const expected = Buffer.from(TEST_DATA)
+
+    const cid = await ipfs.block.put(expected)
+
+    const url = `ipfs://${cid.toV1().toString()}/?format=raw`
+
+    const response = await fetch(url)
+
+    t.ok(response.ok, 'got ok in response')
+
+    const gotRaw = await response.arrayBuffer()
+
+    const gotBuffer = Buffer.from(gotRaw)
+
+    t.ok(gotBuffer.equals(expected), 'Got raw block data')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+
+test('Accept header to get raw block', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const expected = Buffer.from(TEST_DATA)
+
+    const cid = await ipfs.block.put(expected)
+
+    const url = `ipfs://${cid.toV1().toString()}/`
+
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/vnd.ipld.raw'
+      }
+    })
+
+    t.ok(response.ok, 'got ok in response')
+
+    const gotRaw = await response.arrayBuffer()
+
+    const gotBuffer = Buffer.from(gotRaw)
+
+    t.ok(gotBuffer.equals(expected), 'Got raw block data')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+
+test('Format string to get car file', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const cid = await ipfs.dag.put({hello: 'world'})
+
+    const expected = Buffer.concat(await collect(ipfs.dag.export(cid)))
+
+    const url = `ipfs://${cid.toV1().toString()}/?format=car`
+
+    const response = await fetch(url)
+
+    t.ok(response.ok, 'got ok in response')
+
+    const gotRaw = await response.arrayBuffer()
+
+    const gotBuffer = Buffer.from(gotRaw)
+
+    t.ok(gotBuffer.equals(expected), 'Got expected CAR file')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('Accept header to get car file', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const cid = await ipfs.dag.put({hello: 'world'})
+
+    const expected = Buffer.concat(await collect(ipfs.dag.export(cid)))
+
+    const url = `ipfs://${cid.toV1().toString()}/`
+
+    const response = await fetch(url, {
+			headers: {
+			  Accept: "application/vnd.ipld.car"
+			}
+    })
+
+    t.ok(response.ok, 'got ok in response')
+
+    const gotRaw = await response.arrayBuffer()
+
+    const gotBuffer = Buffer.from(gotRaw)
+
+    t.ok(gotBuffer.equals(expected), 'Got expected CAR file')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
 
 test('Load a directory listing via fetch', async (t) => {
   let ipfs = null
@@ -529,8 +669,6 @@ test('POST a CAR to localhost', async (t) => {
     })
 
     t.ok(response.ok, 'ok in response')
-
-    console.log(await response.text())
   } finally {
     try {
       if (ipfs) await ipfs.stop()
