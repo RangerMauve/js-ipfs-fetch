@@ -4,12 +4,16 @@ const mime = require('mime/lite')
 const { CID } = require('multiformats/cid')
 const { base32 } = require('multiformats/bases/base32')
 const { base36 } = require('multiformats/bases/base36')
+const cbor = require('@ipld/dag-cbor')
+// Different from raw JSON. Determenistic
+const dagJSON = require('@ipld/dag-json')
 const Busboy = require('busboy')
 const { Readable } = require('stream')
 const { EventIterator } = require('event-iterator')
 const crypto = require('crypto')
 const posixPath = require('path').posix
 const { exporter } = require('ipfs-unixfs-exporter')
+const { IPLDURL } = require('js-ipld-url')
 
 const bases = base32.decoder.or(base36.decoder)
 
@@ -217,7 +221,105 @@ module.exports = function makeIPFSFetch ({
     }
 
     try {
-      if (protocol === 'pubsub:') {
+      if (protocol === 'ipld:') {
+        const { segments } = new IPLDURL(url)
+        const rawPath = segments.map(({ name }) => name).join('/')
+        ipfsPath = `/ipfs/${hostname}/${rawPath}`
+        if (method === 'GET') {
+          // TODO: resolve CID, match with Accept to see if block can be fetched instead
+          const { cid, remainderPath } = await ipfs.dag.resolve(ipfsPath)
+          const { value } = await ipfs.dag.get(cid, {
+            path: remainderPath,
+            timeout: ipfsTimeout,
+            signal
+          })
+
+          const format = searchParams.get('format')
+          const accept = reqHeaders.Accept || reqHeaders.accept
+
+          // TODO: Support stuff like dag-pb?
+          if (format === 'dag-cbor' || accept === 'application/vnd.ipld.dag-cbor') {
+            const encoded = cbor.encode(value)
+            headers['Content-Type'] = 'application/vnd.ipld.dag-cbor'
+            return {
+              statusCode: 200,
+              headers,
+              data: intoAsyncIterable(encoded)
+            }
+          } else {
+            // Assume JSON is wanted by default, makes it easy for viewing raw URLs / use with fetch
+            const encoded = dagJSON.encode(value)
+            headers['Content-Type'] = 'application/vnd.ipld.dag-json; charset=utf-8'
+            return {
+              statusCode: 200,
+              headers,
+              data: intoAsyncIterable(encoded)
+            }
+          }
+        } else if (method === 'POST' && hostname === SPECIAL_HOSTNAME) {
+          const data = await collect(body)
+          const contentType = reqHeaders['Content-Type'] || reqHeaders['content-type']
+
+          let decoded = null
+          let storeCodec = cbor
+
+          if (contentType === 'application/json') {
+            decoded = JSON.parse(data.toString('utf8'))
+            storeCodec = 'dag-json'
+          } else if (contentType === 'application/dag-json') {
+            decoded = dagJSON.decode(data)
+            storeCodec = 'dag-json'
+          } else if (contentType === 'application/vnd.ipld.dag-cbor') {
+            decoded = cbor.decode(data)
+            storeCodec = 'dag-cbor'
+          } else {
+            return {
+              // TODO: better status?
+              statusCode: 400,
+              headers,
+              data: intoAsyncIterable('Unsupproted content-type, must be dag-cbor, or dag-json')
+            }
+          }
+
+          const format = searchParams.get('format')
+
+          if (format) {
+            if (format === 'dag-json' || format === 'dag-cbor') {
+              storeCodec = format
+            } else {
+              return {
+                // TODO: better status?
+                statusCode: 400,
+                headers,
+                data: intoAsyncIterable('Unsupproted format, must be dag-json or dag-cbor')
+              }
+            }
+          }
+
+          const cid = await ipfs.dag.put(decoded, {
+            storeCodec,
+            timeout: ipfsTimeout,
+            signal
+          })
+
+          const cidHash = cid.toV1().toString()
+          const addedURL = `ipld://${cidHash}/`
+
+          headers.Location = addedURL
+
+          return {
+            statusCode: 201,
+            headers,
+            data: intoAsyncIterable(addedURL)
+          }
+        } else {
+          return {
+            statusCode: 405,
+            headers,
+            data: intoAsyncIterable('Method Not Supported')
+          }
+        }
+      } else if (protocol === 'pubsub:') {
         const topic = hostname
         if (method === 'GET') {
           const format = searchParams.get('format')

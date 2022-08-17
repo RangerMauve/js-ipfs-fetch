@@ -953,6 +953,113 @@ test('Testing the timeout option', async (t) => {
   }
 })
 
+test('Load IPLD dag node as JSON', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const object = {
+      hello: 'World!',
+      nested: {
+        object: 'property'
+      }
+    }
+
+    const cid = await ipfs.dag.put(object, {
+      storeCodec: 'dag-cbor'
+    })
+
+    const url = `ipld://${cid.toV1().toString()}/`
+
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json'
+      }
+    })
+
+    t.ok(response.ok, 'able to fetch from CID')
+
+    if (!response.ok) {
+      throw new Error(await response.text())
+    }
+
+    const contentType = response.headers.get('Content-Type')
+
+    t.equal(contentType, 'application/vnd.ipld.dag-json; charset=utf-8', 'Content type is JSON')
+
+    const data = await response.json()
+
+    t.deepEqual(data, object, 'Resulting data same as uploaded')
+
+    const subURL = new URL('/nested?format=dag-json', url).href
+
+    const subResponse = await fetch(subURL)
+
+    t.ok(subResponse.ok, 'able to fetch subpath from CID')
+
+    if (!subResponse.ok) {
+      throw new Error(await subResponse.text())
+    }
+
+    const subData = await subResponse.json()
+
+    t.deepEqual(subData, object.nested, 'Got nested data out')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+test('POST JSON to IPLD, have it saved to cbor', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const object = {
+      hello: 'World!',
+      nested: {
+        object: 'property'
+      }
+    }
+
+    const url = 'ipld://localhost/?format=dag-cbor'
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(object)
+    })
+
+    t.ok(response.ok, 'able to post to IPLD')
+
+    if (!response.ok) {
+      throw new Error(await response.text())
+    }
+
+    const resultURL = response.headers.get('Location')
+    const expectedURL = 'ipld://bafyreibemxbzlnhbiazvd5nb7u3lmflyourjzjvepwnojsirsx5z4iqm6q/'
+
+    t.equal(resultURL, expectedURL, 'Got expected URL')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
 async function collect (iterable) {
   const results = []
   for await (const item of iterable) {
