@@ -157,3 +157,56 @@ You can upload several files to IPNS using the `POST` with a FormData body.
 Similar to `ipfs` you can append serveral files and update an existing IPFS folder with your new data.
 
 The key in the origin must be the public `ipns://k2k4r...` style key that you created with `ipns://localhost?key=`.
+
+### `await fetch('ipld://CID/example', {method: 'GET', headers: {'Accept': "application/json"})`
+
+You can get get raw [IPLD](https://ipld.io/) data from a CID using the `ipld` protocol scheme.
+
+The data pointed to by the CID will not be interpreted as UnixFS and will use raw IPLD traversal wih the path.
+
+Path segments can have custom parameters separated by `;` and can use URL encoding to have special characters like `/` represented.
+
+The `Accept` header can be used to re-encode the data into a different format. Valid options right now are `application/json` or `application/vnd.ipld.dag-json` for dag-JSON encoding, and `application/vnd.ipld.dag-cbor` for CBOR encoding.
+
+This lets you view IPLD data encoded as CBOR as JSON in your application without needing to decode it yourself.
+
+### `await fetch('ipld://localhost?format=dag-cbor', {method: 'POST', body, {headers: {'Content-Type': "application/json"}})`
+
+You can upload data to the IPLD data model by doing a `POST` to `ipfs://localhost`.
+
+You can specify the encoding used for the body using the `Content-Type` header.
+Data encoded in JSON will be encoded to the data model as dag-json.
+
+You can also specify that you want the data to be saved in another format than what was used to upload it via the `?format` parameter.
+Valid options are `dag-json` to save the body as JSON, and `dag-cbor` to save the body as CBOR.
+
+This lets your application send data to IPLD authored in JSON, but have it saved to the more efficient CBOR encoding.
+
+The resulting data will be returned in the `Location` header in the format of `ipld://CID/`.
+
+### `new EventSource('pubsub://TOPIC/?format=base64') / fetch('pubsub://TOPIC/', {headers: {Accept: "text/event-stream"}})`
+
+You can subscribe to [LibP2P's Publish/Subscribe](https://docs.libp2p.io/concepts/publish-subscribe/) topics when using the `pubsub` protocol, and using the `text/event-stream` Accept header.
+
+If you have access to the Browser's [EventSource API](https://developer.mozilla.org/en-US/docs/Web/API/EventSource), or use something like [fetch-event-source](https://github.com/RangerMauve/fetch-event-source/) you can automatically parse the resulting events.
+Otherwise you'll need to read from the response `body` and parse the stream body manually.
+
+The `TOPIC` can be any utf-8 string and will be used to connect to peers from accross the network.
+
+The EventSource will emit `message` events who'se `data` is a JSON object which contains the following parameters:
+- `from`: the ID of the peer that sent the message
+- `topics`: What topics the peer that sent this event is also gossiping on
+- `data`: The encoded `data` for the message. By default it is a base64 encoded string.
+
+The `?format` parameter can specify what format you expect messages `data` field to be encoded in.
+The default is base64 which can be decoded with the browsers TextDecoder or [atob](https://developer.mozilla.org/en-US/docs/Web/API/atob) API.
+Other options are `json` or `utf8`.
+JSON is useful in that it won't require an extra decode step for structured data.
+
+### `await fetch('pubsub://TOPIC/', {method: 'POST', data})`
+
+You can publish a new message to subscribed peers for a `TOPIC` by doing a `POST` to the `pubsub` protocol.
+
+The `TOPIC` can be any utf8 string and will be used to find peers on the network to send the data to.
+
+The `body` will be sent as a binary buffer to all other peers and it'll be up to them to decode the data.
