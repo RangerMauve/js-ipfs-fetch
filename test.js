@@ -1011,7 +1011,7 @@ test('Load IPLD dag node as JSON', async (t) => {
 
     const contentType = response.headers.get('Content-Type')
 
-    t.equal(contentType, 'application/vnd.ipld.dag-json; charset=utf-8', 'Content type is JSON')
+    t.equal(contentType, 'application/json', 'Content type is JSON')
 
     const data = await response.json()
 
@@ -1084,7 +1084,7 @@ test('POST JSON to IPLD, have it saved to cbor', async (t) => {
   }
 })
 
-test.only('pubsub between two peers', async (t) => {
+test('pubsub between two peers', async (t) => {
   let ipfs1 = null
   let ipfs2 = null
   try {

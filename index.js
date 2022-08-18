@@ -249,7 +249,9 @@ module.exports = function makeIPFSFetch ({
           } else {
             // Assume JSON is wanted by default, makes it easy for viewing raw URLs / use with fetch
             const encoded = dagJSON.encode(value)
-            headers['Content-Type'] = 'application/vnd.ipld.dag-json; charset=utf-8'
+            // Use regular JSON mime type since it's easier to integrate with browsers and other tools
+            // Using vnd.ipld.dag-json causes chromim to attempt a download instead of viewing
+            headers['Content-Type'] = 'application/json'
             return {
               statusCode: 200,
               headers,
