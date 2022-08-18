@@ -326,24 +326,28 @@ module.exports = function makeIPFSFetch ({
           const accept = reqHeaders.Accept || reqHeaders.accept
           if (accept && accept.includes('text/event-stream')) {
             const events = new EventIterator(({ push, fail }) => {
-              function handler ({ from, sequenceNumber, data, topicIDs: topics }) {
-                const id = sequenceNumber.toString()
-                let formatted = null
-                if (format === 'json') {
-                  formatted = JSON.parse(Buffer.from(data).toString('utf8'))
-                } else if (format === 'utf8') {
-                  formatted = Buffer.from(data).toString('utf8')
-                } else {
-                  formatted = Buffer.from(data).toString('base64')
+              function handler ({ from, data, topicIDs: topics, seqno }) {
+                try {
+                  const id = Buffer.from(seqno).toString('hex')
+                  let formatted = null
+                  if (format === 'json') {
+                    formatted = JSON.parse(Buffer.from(data).toString('utf8'))
+                  } else if (format === 'utf8') {
+                    formatted = Buffer.from(data).toString('utf8')
+                  } else {
+                    formatted = Buffer.from(data).toString('base64')
+                  }
+
+                  const eventData = JSON.stringify({
+                    from,
+                    topics,
+                    data: formatted
+                  })
+
+                  push(`id:${id}\ndata:${eventData}\n\n`)
+                } catch (e) {
+                  push(`type:error\ndata:${e.stack}\n\n`)
                 }
-
-                const eventData = JSON.stringify({
-                  from,
-                  topics,
-                  data: formatted
-                })
-
-                push(`id:${id}\ndata:${eventData}\n\n`)
               }
               ipfs.pubsub.subscribe(topic, handler).catch((e) => {
                 fail(e)

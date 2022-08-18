@@ -4,12 +4,18 @@ const test = require('tape')
 const FormData = require('form-data')
 const makeIPFSFetch = require('./')
 const ipfsHttpModule = require('ipfs-http-client')
+const crypto = require('crypto')
+const { once } = require('events')
+
+const {default: createEventSource} = require('@rangermauve/fetch-event-source')
 
 const Ctl = require('ipfsd-ctl')
 const ipfsBin = require('go-ipfs').path()
 
 const EMPTY_DIR_URL = 'ipfs://bafyaabakaieac'
 const TEST_DATA = 'Hello World!'
+
+let port = 6660
 
 const factory = Ctl.createFactory({
   type: 'go',
@@ -28,8 +34,26 @@ test.onFinish(async () => {
 })
 
 async function getInstance () {
-  const ipfsd = await factory.spawn()
+  const swarmPort = port++
+  const ipfsOptions = {
+    config: {
+      Addresses: {
+        API: `/ip4/127.0.0.1/tcp/${port++}`,
+        Gateway: `/ip4/127.0.0.1/tcp/${port++}`,
+        Swarm: [
+          `/ip4/0.0.0.0/tcp/${swarmPort}`,
+          `/ip6/::/tcp/${swarmPort}`,
+          `/ip4/0.0.0.0/udp/${swarmPort}/quic`,
+          `/ip6/::/udp/${swarmPort}/quic`
+        ]
+      }
+    }
+  }
+
+  const ipfsd = await factory.spawn({ ipfsOptions })
+
   await ipfsd.init()
+
   await ipfsd.start()
   await ipfsd.api.id()
 
@@ -1059,6 +1083,68 @@ test('POST JSON to IPLD, have it saved to cbor', async (t) => {
     }
   }
 })
+
+test.only('pubsub between two peers', async (t) => {
+  let ipfs1 = null
+  let ipfs2 = null
+  try {
+    ipfs1 = await getInstance()
+    ipfs2 = await getInstance()
+
+    const fetch1 = await makeIPFSFetch({ ipfs: ipfs1 })
+    const fetch2 = await makeIPFSFetch({ ipfs: ipfs2 })
+
+    const { EventSource } = createEventSource(fetch1)
+
+    const url = `pubsub://testing-${crypto.randomBytes(8).toString('hex')}/?format=utf8`
+
+    const source = new EventSource(url)
+
+    await Promise.race([
+      once(source, 'open'),
+      once(source, 'error').then((e) => { throw e })
+    ])
+
+    const toRead = Promise.race([
+      once(source, 'message'),
+      once(source, 'error').then((e) => { throw e })
+    ])
+
+    await delay(500)
+
+    const message = 'Hello World!'
+
+    const publishRequest = await fetch2(url, {
+      method: 'POST',
+      body: message
+    })
+
+    t.ok(publishRequest.ok, 'Able to send publish')
+
+    const [event] = await toRead
+
+    const { data, lastEventId } = event
+    t.ok(lastEventId, 'Got event id')
+
+    const parsed = JSON.parse(data)
+
+    t.equal(parsed.data, message, 'Expected message contents got sent')
+  } finally {
+    try {
+      await Promise.all([
+        ipfs1 ? ipfs1.stop() : null,
+        ipfs2 ? ipfs1.stop() : null
+      ])
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+async function delay (interval = 1000) {
+  await new Promise((resolve) => setTimeout(resolve, interval))
+}
 
 async function collect (iterable) {
   const results = []
