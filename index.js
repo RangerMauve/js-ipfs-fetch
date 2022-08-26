@@ -458,7 +458,7 @@ module.exports = function makeIPFSFetch ({
 
             if (isCAR) {
               const results = []
-              const importOpts = { timeout: ipfsTimeout, pinRoots: false }
+              const importOpts = { timeout: ipfsTimeout, pinRoots: true }
               for await (const { root } of ipfs.dag.import(body, importOpts)) {
                 const { cid } = root
 

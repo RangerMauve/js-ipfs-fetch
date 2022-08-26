@@ -7,7 +7,7 @@ const ipfsHttpModule = require('ipfs-http-client')
 const crypto = require('crypto')
 const { once } = require('events')
 
-const {default: createEventSource} = require('@rangermauve/fetch-event-source')
+const { default: createEventSource } = require('@rangermauve/fetch-event-source')
 
 const Ctl = require('ipfsd-ctl')
 const ipfsBin = require('go-ipfs').path()
@@ -689,6 +689,12 @@ test('POST a CAR to localhost', async (t) => {
     })
 
     t.ok(response.ok, 'ok in response')
+
+    const roots = (await response.text()).split('\n')
+
+    const expectedURL = `ipfs://${dagCID.toV1().toString()}/`
+
+    t.deepEqual(roots, [expectedURL], 'Got expected roots')
   } finally {
     try {
       if (ipfs) await ipfs.stop()
