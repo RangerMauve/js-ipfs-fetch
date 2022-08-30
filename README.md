@@ -7,7 +7,7 @@ Use the same `fetch()` API browsers provide for HTTP, but for IPFS
 ## Example
 
 ```javascript
-const IPFS = require('ipfs')
+const IPFS = require('ipfs-core')
 const makeIpfsFetch = require('ipfs-fetch')
 
 const ipfs = await IPFS.create()
