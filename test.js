@@ -1,16 +1,18 @@
-global.Buffer = Buffer
+/* global FormData, Blob */
+import crypto from 'crypto'
+import { once } from 'events'
 
-const test = require('tape')
-const FormData = require('form-data')
-const makeIPFSFetch = require('./')
-const ipfsHttpModule = require('ipfs-http-client')
-const crypto = require('crypto')
-const { once } = require('events')
+import test from 'tape'
 
-const { default: createEventSource } = require('@rangermauve/fetch-event-source')
+import createEventSource from '@rangermauve/fetch-event-source'
 
-const Ctl = require('ipfsd-ctl')
-const ipfsBin = require('go-ipfs').path()
+import * as ipfsHttpModule from 'ipfs-http-client'
+import * as Ctl from 'ipfsd-ctl'
+import * as GoIPFS from 'go-ipfs'
+
+import makeIPFSFetch from './index.js'
+
+const ipfsBin = GoIPFS.path()
 
 const EMPTY_DIR_URL = 'ipfs://bafyaabakaieac'
 const TEST_DATA = 'Hello World!'
@@ -423,7 +425,6 @@ test('Resolve index.html from a directory', async (t) => {
   }
 })
 
-// This should be deprecated?
 test('POST a file into IPFS', async (t) => {
   let ipfs = null
   try {
@@ -525,21 +526,17 @@ test('PUT formdata to IPFS cid', async (t) => {
 
     const form = new FormData()
 
-    form.append('file', TEST_DATA, {
+    form.append('file', new Blob([TEST_DATA]), {
       filename: 'example.txt'
     })
 
-    form.append('file', TEST_DATA, {
+    form.append('file', new Blob([TEST_DATA]), {
       filename: 'example2.txt'
     })
 
-    const body = form.getBuffer()
-    const headers = form.getHeaders()
-
     const response = await fetch(EMPTY_DIR_URL, {
       method: 'put',
-      headers,
-      body
+      body: form
     })
 
     t.ok(response, 'Got a response object')
@@ -576,11 +573,11 @@ test('POST formdata to IPFS localhost', async (t) => {
 
     const form = new FormData()
 
-    form.append('file', TEST_DATA, {
+    form.append('file', new Blob([TEST_DATA]), {
       filename: 'example.txt'
     })
 
-    form.append('file', TEST_DATA, {
+    form.append('file', new Blob([TEST_DATA]), {
       filename: 'example2.txt'
     })
 
@@ -628,9 +625,11 @@ test('PUT to a CID', async (t) => {
     // Formerly 'ipfs:///example.txt`
     // Needed to change because a single filename gets interpreted as the hostname
     const response1 = await fetch(`${EMPTY_DIR_URL}/example.txt`, {
-      method: 'post',
+      method: 'PUT',
       body: TEST_DATA
     })
+
+    await checkOk(response1)
 
     const firstURL = response1.headers.get('Location')
 
@@ -705,7 +704,7 @@ test('POST a CAR to localhost', async (t) => {
   }
 })
 
-test('Publish and resolve IPNS', async (t) => {
+test.only('Publish and resolve IPNS', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -714,10 +713,13 @@ test('Publish and resolve IPNS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const dataURI = (await fetch(`${EMPTY_DIR_URL}/example.txt`, {
-      method: 'post',
+    const dataRequest = await fetch(`${EMPTY_DIR_URL}/example.txt`, {
+      method: 'put',
       body: TEST_DATA
-    })).headers.get('Location')
+    })
+    await checkOk(dataRequest)
+    const dataURI = dataRequest.headers.get('Location')
+
     const folderURI = dataURI.slice(0, -('example.txt'.length))
 
     const makeKeyResponse = await fetch('ipns://localhost/?key=put-file', {
@@ -1159,4 +1161,8 @@ async function collect (iterable) {
   }
 
   return results
+}
+
+async function checkOk (response) {
+  if (!response.ok) throw new Error(`${response.status}:\n${await response.text()}`)
 }

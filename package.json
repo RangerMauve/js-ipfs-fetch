@@ -2,7 +2,7 @@
   "name": "js-ipfs-fetch",
   "version": "4.2.3",
   "description": "Use the same `fetch()` API browsers provide for HTTP, but for IPFS",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
     "lint": "standard --fix",
     "test": "node test",
@@ -31,7 +31,8 @@
     "event-iterator": "^2.0.0",
     "ipfs-unixfs-exporter": "^7.0.6",
     "js-ipld-url": "^1.0.2",
-    "make-fetch": "^2.3.4",
+    "js-ipld-url-resolve": "^1.0.0",
+    "make-fetch": "^3.0.0",
     "mime": "^2.4.6",
     "multiformats": "^9.4.2",
     "range-parser": "^1.2.1"
