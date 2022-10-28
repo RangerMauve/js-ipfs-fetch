@@ -30,7 +30,6 @@ const DEFAULT_HEADERS = {
 }
 
 async function DEFAULT_ON_NOT_FOUND (request) {
-  console.log(request)
   return {
     status: 405,
     body: 'Method Not Supported'

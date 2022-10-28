@@ -515,7 +515,7 @@ test('PUT a file and overwrite it', async (t) => {
   }
 })
 
-test('PUT formdata to IPFS cid', async (t) => {
+test.only('PUT formdata to IPFS cid', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -526,13 +526,9 @@ test('PUT formdata to IPFS cid', async (t) => {
 
     const form = new FormData()
 
-    form.append('file', new Blob([TEST_DATA]), {
-      filename: 'example.txt'
-    })
+    form.append('file', new Blob([TEST_DATA]), 'example.txt')
 
-    form.append('file', new Blob([TEST_DATA]), {
-      filename: 'example2.txt'
-    })
+    form.append('file', new Blob([TEST_DATA]), 'example2.txt')
 
     const response = await fetch(EMPTY_DIR_URL, {
       method: 'put',
@@ -573,13 +569,9 @@ test('POST formdata to IPFS localhost', async (t) => {
 
     const form = new FormData()
 
-    form.append('file', new Blob([TEST_DATA]), {
-      filename: 'example.txt'
-    })
+    form.append('file', new Blob([TEST_DATA]), 'example.txt')
 
-    form.append('file', new Blob([TEST_DATA]), {
-      filename: 'example2.txt'
-    })
+    form.append('file', new Blob([TEST_DATA]), 'example2.txt')
 
     const body = form.getBuffer()
     const headers = form.getHeaders()
@@ -704,7 +696,7 @@ test('POST a CAR to localhost', async (t) => {
   }
 })
 
-test.only('Publish and resolve IPNS', async (t) => {
+test('Publish and resolve IPNS', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -783,13 +775,9 @@ test('PUT FormData to IPNS', async (t) => {
 
     const form = new FormData()
 
-    form.append('file', TEST_DATA, {
-      filename: 'example.txt'
-    })
+    form.append('file', TEST_DATA, 'example.txt')
 
-    form.append('file', TEST_DATA, {
-      filename: 'example2.txt'
-    })
+    form.append('file', TEST_DATA, 'example2.txt')
 
     const body = form.getBuffer()
     const headers = form.getHeaders()
