@@ -31,21 +31,22 @@
     "event-iterator": "^2.0.0",
     "ipfs-unixfs-exporter": "^7.0.6",
     "js-ipld-url": "^1.0.2",
-    "js-ipld-url-resolve": "^1.0.0",
-    "make-fetch": "^3.0.0",
+    "js-ipld-url-resolve": "^1.1.2",
+    "make-fetch": "^3.1.1",
     "mime": "^2.4.6",
     "multiformats": "^9.4.2",
     "range-parser": "^1.2.1"
   },
   "devDependencies": {
-    "@rangermauve/fetch-event-source": "^1.0.1",
+    "@rangermauve/fetch-event-source": "^1.0.3",
     "browser-run": "^8.0.0",
     "browserify": "^17.0.0",
     "form-data": "^4.0.0",
-    "go-ipfs": "^0.12.0",
+    "get-port": "^6.1.2",
+    "go-ipfs": "^0.17.0",
     "ipfs-core": "^0.9.1",
-    "ipfs-http-client": "^56.0.3",
-    "ipfsd-ctl": "^10.0.6",
+    "ipfs-http-client": "^60.0.0",
+    "ipfsd-ctl": "^13.0.0",
     "standard": "^14.3.4",
     "tape": "^5.0.1"
   }

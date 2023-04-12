@@ -24,6 +24,9 @@ const bases = base32.decoder.or(base36.decoder)
 const IPFS_TIMEOUT = 30000
 const IPNS_TIMEOUT = 120000
 const SPECIAL_HOSTNAME = 'localhost'
+const EMPTY_DIR_IPFS_PATH = '/ipfs/bafyaabakaieac/'
+
+const MIME_JSON = 'application/json'
 
 const DEFAULT_HEADERS = {
   'Content-Type': 'text/plain; charset=utf-8'
@@ -62,14 +65,22 @@ export default function makeIPFSFetch ({
     onNotFound
   })
   const ipldSystem = new IPLDURLSystem({
-    getNode
+    getNode,
+    saveNode
   })
+
+  async function saveNode (data, { encoding = 'dag-cbor', ...opts } = {}) {
+    return ipfs.dag.put(data, {
+      storeCodec: encoding,
+      ...opts
+    })
+  }
 
   router.get('ipld://*/**', async ({ url, headers, signal }) => {
     const accept = headers.get('Accept')
     const format = new URL(url).searchParams.get('format')
 
-    const value = ipldSystem.resolve(url.href)
+    const value = await ipldSystem.resolve(url)
 
     if (format === 'dag-cbor' || accept === 'application/vnd.ipld.dag-cbor') {
       return {
@@ -84,7 +95,7 @@ export default function makeIPFSFetch ({
     return {
       status: 200,
       headers: {
-        'Content-Type': 'appliction/json'
+        'Content-Type': MIME_JSON
       },
       body: dagJSON.encode(value)
     }
@@ -101,8 +112,8 @@ export default function makeIPFSFetch ({
       let decoded = null
       let storeCodec = cbor
 
-      if (contentType === 'application/json') {
-        decoded = JSON.parse(data.toString('utf8'))
+      if (contentType === MIME_JSON) {
+        decoded = JSON.parse(Buffer.from(data).toString('utf8'))
         storeCodec = 'dag-json'
       } else if (contentType === 'application/dag-json') {
         decoded = dagJSON.decode(data)
@@ -156,15 +167,17 @@ export default function makeIPFSFetch ({
 
   if (writable) {
     router.get('pubsub://*/', async ({ url, headers }) => {
-      const format = new URL(url).searchParams.get('format')
+      const { searchParams, hostname } = new URL(url)
+      const format = searchParams.get('format')
       const accept = headers.get('Accept')
-      const topic = url.hostname
+      const topic = hostname
 
       if (accept && accept.includes('text/event-stream')) {
         const events = new EventIterator(({ push, fail }) => {
-          function handler ({ from, data, topicIDs: topics, seqno }) {
+          function handler (event) {
+            const { from, data, sequenceNumber } = event
             try {
-              const id = Buffer.from(seqno).toString('hex')
+              const id = sequenceNumber.toString(16)
               let formatted = null
               if (format === 'json') {
                 formatted = JSON.parse(Buffer.from(data).toString('utf8'))
@@ -176,7 +189,6 @@ export default function makeIPFSFetch ({
 
               const eventData = JSON.stringify({
                 from,
-                topics,
                 data: formatted
               })
 
@@ -209,7 +221,7 @@ export default function makeIPFSFetch ({
       return {
         status: 200,
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': MIME_JSON
         },
         body
       }
@@ -217,7 +229,7 @@ export default function makeIPFSFetch ({
 
     router.post('pubsub://*/', async (request) => {
       const { url, signal } = request
-      const topic = url.hostname
+      const topic = new URL(url).hostname
       const payload = await request.arrayBuffer()
       // TODO: Handle oversized messages wihth 413
       await ipfs.pubsub.publish(topic, payload, {
@@ -347,36 +359,32 @@ export default function makeIPFSFetch ({
     })
 
     router.put(`ipns://${SPECIAL_HOSTNAME}/`, onNotFound)
-    router.put('ipns://**/**', async (request) => {
+    router.put('ipns://*/**', async (request) => {
       const { url, signal, headers } = request
       const contentType = headers.get('Content-Type') || ''
       const isFormData = contentType.includes('multipart/form-data')
 
-      let ipfsPath = urlToIPNSPath(url)
-      const split = ipfsPath.split('/')
-      const keyName = split[0]
-      const subpath = split.slice(1).join('/')
+      const ipnsPath = urlToIPFSPath(url)
+      const split = ipnsPath.split('/')
+      const keyName = split[2]
+      const subpath = split.slice(3).join('/')
 
-      if (isFormData || subpath) {
-        // Resolve to current CID before writing over it
-        try {
-          ipfsPath = await resolveIPNS(keyName)
-          if (ipfsPath.startsWith('/ipfs/')) ipfsPath = ipfsPath.slice('/ipfs/'.length)
-          ipfsPath += `/${subpath}`
-        } catch (e) {
-          // console.error(e)
-          // If CID couldn't be resolved from the key, use the subpath
-          // TODO: Detect specific issues
-          ipfsPath = subpath
+      if (!isFormData && !subpath) {
+        return {
+          status: 400,
+          body: 'Cannot upload to root. Must either use Form Data or a file subpath.'
         }
-
-        const addedURL = await uploadData(ipfsPath, request, isFormData, signal)
-        // We just want the new root CID, not the full path to the file
-        const cid = addedURL.slice('ipfs://'.length).split('/')[0]
-        const value = `/ipfs/${cid}/`
-
-        return updateIPNS(keyName, value)
       }
+
+      // Resolve to current CID before writing over it
+      const ipfsPath = await resolveIPNS(ipnsPath)
+
+      const addedURL = await uploadData(ipfsPath, request, isFormData, signal)
+      // We just want the new root CID, not the full path to the file
+      const cid = addedURL.slice('ipfs://'.length).split('/')[0]
+      const value = `/ipfs/${cid}/`
+
+      return updateIPNS(keyName, value)
     })
 
     router.post('ipns://*/', async (request) => {
@@ -498,7 +506,7 @@ export default function makeIPFSFetch ({
           body = page
         } else {
           const json = JSON.stringify(files, null, '\t')
-          headers['Content-Type'] = 'application/json; charset=utf-8'
+          headers['Content-Type'] = `${MIME_JSON}; charset=utf-8`
           body = json
         }
 
@@ -601,7 +609,7 @@ export default function makeIPFSFetch ({
 
   async function resolveIPNS (path, signal) {
     const segments = ensureStartingSlash(path).split(/\/+/)
-    let mainSegment = segments[1]
+    let mainSegment = segments[2]
 
     if (!mainSegment.includes('.')) {
       const keys = await ipfs.key.list({ signal, timeout: ipnsTimeout })
@@ -613,13 +621,13 @@ export default function makeIPFSFetch ({
 
     const toResolve = `/ipns${ensureEndingSlash(ensureStartingSlash(mainSegment))}`
     const resolved = await ipfs.resolve(toResolve, { signal, timeout: ipnsTimeout })
-    return [resolved, ...segments.slice(2)].join('/')
+    return [resolved, ...segments.slice(3)].join('/')
   }
 
   async function updateIPNS (keyName, value, signal) {
     const existing = await hasKey(keyName)
     if (!existing) {
-      await genKey(keyName, signal)
+      throw new Error(`Invalid IPNS key: ${keyName}`)
     }
 
     const finalName = existing ? existing.name : keyName
@@ -643,6 +651,7 @@ export default function makeIPFSFetch ({
       body: ipnsURL
     }
   }
+
   async function genKey (keyName, signal) {
     await ipfs.key.gen(keyName, {
       signal,
@@ -650,6 +659,8 @@ export default function makeIPFSFetch ({
       size: 2048,
       timeout: ipnsTimeout
     })
+
+    await updateIPNS(keyName, EMPTY_DIR_IPFS_PATH, signal)
   }
 
   async function hasKey (keyName, signal) {
