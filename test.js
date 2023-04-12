@@ -936,7 +936,7 @@ test('DELETE from IPFS URL', async (t) => {
   }
 })
 
-test.only('DELETE from IPFS URL', async (t) => {
+test('DELETE from IPFS URL', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
