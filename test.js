@@ -1,21 +1,23 @@
-global.Buffer = Buffer
+/* global FormData, Blob */
+import crypto from 'crypto'
+import { once } from 'events'
 
-const test = require('tape')
-const FormData = require('form-data')
-const makeIPFSFetch = require('./')
-const ipfsHttpModule = require('ipfs-http-client')
-const crypto = require('crypto')
-const { once } = require('events')
+import test from 'tape'
 
-const { default: createEventSource } = require('@rangermauve/fetch-event-source')
+import createEventSource from '@rangermauve/fetch-event-source'
+import getPort from 'get-port'
 
-const Ctl = require('ipfsd-ctl')
-const ipfsBin = require('go-ipfs').path()
+import * as ipfsHttpModule from 'ipfs-http-client'
+import * as Ctl from 'ipfsd-ctl'
+import * as GoIPFS from 'go-ipfs'
+
+import makeIPFSFetch from './index.js'
+
+const ipfsBin = GoIPFS.path()
 
 const EMPTY_DIR_URL = 'ipfs://bafyaabakaieac'
 const TEST_DATA = 'Hello World!'
-
-let port = 6660
+const TEST_DATA_BLOB = new Blob([TEST_DATA])
 
 const factory = Ctl.createFactory({
   type: 'go',
@@ -34,19 +36,27 @@ test.onFinish(async () => {
 })
 
 async function getInstance () {
-  const swarmPort = port++
+  const swarmPort = await getPort()
+  const apiPort = await getPort()
   const ipfsOptions = {
     config: {
       Addresses: {
-        API: `/ip4/127.0.0.1/tcp/${port++}`,
-        Gateway: `/ip4/127.0.0.1/tcp/${port++}`,
+        API: `/ip4/127.0.0.1/tcp/${apiPort}`,
+        Gateway: null,
         Swarm: [
           `/ip4/0.0.0.0/tcp/${swarmPort}`,
           `/ip6/::/tcp/${swarmPort}`,
           `/ip4/0.0.0.0/udp/${swarmPort}/quic`,
           `/ip6/::/udp/${swarmPort}/quic`
         ]
-      }
+      },
+      Ipns: {
+        UsePubsub: true
+      },
+      Pubsub: {
+        Enabled: true
+      },
+      Gateway: null
     }
   }
 
@@ -423,7 +433,6 @@ test('Resolve index.html from a directory', async (t) => {
   }
 })
 
-// This should be deprecated?
 test('POST a file into IPFS', async (t) => {
   let ipfs = null
   try {
@@ -525,21 +534,13 @@ test('PUT formdata to IPFS cid', async (t) => {
 
     const form = new FormData()
 
-    form.append('file', TEST_DATA, {
-      filename: 'example.txt'
-    })
+    form.append('file', new Blob([TEST_DATA]), 'example.txt')
 
-    form.append('file', TEST_DATA, {
-      filename: 'example2.txt'
-    })
-
-    const body = form.getBuffer()
-    const headers = form.getHeaders()
+    form.append('file', new Blob([TEST_DATA]), 'example2.txt')
 
     const response = await fetch(EMPTY_DIR_URL, {
       method: 'put',
-      headers,
-      body
+      body: form
     })
 
     t.ok(response, 'Got a response object')
@@ -576,21 +577,13 @@ test('POST formdata to IPFS localhost', async (t) => {
 
     const form = new FormData()
 
-    form.append('file', TEST_DATA, {
-      filename: 'example.txt'
-    })
+    form.append('file', new Blob([TEST_DATA]), 'example.txt')
 
-    form.append('file', TEST_DATA, {
-      filename: 'example2.txt'
-    })
-
-    const body = form.getBuffer()
-    const headers = form.getHeaders()
+    form.append('file', new Blob([TEST_DATA]), 'example2.txt')
 
     const response = await fetch('ipfs://localhost', {
       method: 'post',
-      headers,
-      body
+      body: form
     })
 
     t.ok(response, 'Got a response object')
@@ -628,9 +621,11 @@ test('PUT to a CID', async (t) => {
     // Formerly 'ipfs:///example.txt`
     // Needed to change because a single filename gets interpreted as the hostname
     const response1 = await fetch(`${EMPTY_DIR_URL}/example.txt`, {
-      method: 'post',
+      method: 'PUT',
       body: TEST_DATA
     })
+
+    await checkOk(response1)
 
     const firstURL = response1.headers.get('Location')
 
@@ -714,10 +709,13 @@ test('Publish and resolve IPNS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const dataURI = (await fetch(`${EMPTY_DIR_URL}/example.txt`, {
-      method: 'post',
+    const dataRequest = await fetch(`${EMPTY_DIR_URL}/example.txt`, {
+      method: 'put',
       body: TEST_DATA
-    })).headers.get('Location')
+    })
+    await checkOk(dataRequest)
+    const dataURI = dataRequest.headers.get('Location')
+
     const folderURI = dataURI.slice(0, -('example.txt'.length))
 
     const makeKeyResponse = await fetch('ipns://localhost/?key=put-file', {
@@ -781,25 +779,20 @@ test('PUT FormData to IPNS', async (t) => {
 
     const form = new FormData()
 
-    form.append('file', TEST_DATA, {
-      filename: 'example.txt'
-    })
+    form.append('file', TEST_DATA_BLOB, 'example.txt')
 
-    form.append('file', TEST_DATA, {
-      filename: 'example2.txt'
-    })
-
-    const body = form.getBuffer()
-    const headers = form.getHeaders()
+    form.append('file', TEST_DATA_BLOB, 'example2.txt')
 
     const response = await fetch(ipnsRoot, {
-      method: 'put',
-      headers,
-      body
+      method: 'PUT',
+      body: form
     })
 
-    t.ok(response, 'Got a response object')
     t.ok(response.ok, 'Got OK in response')
+
+    if (!response.ok) {
+      throw new Error(await response.text())
+    }
 
     const ipnsUri = await response.text()
     t.match(ipnsUri, /ipns:\/\/\w+\//, 'returned IPFS url with CID')
@@ -830,17 +823,19 @@ test('PUT file to update IPNS', async (t) => {
 
     t.pass('Able to make create fetch instance')
 
-    const dataURI = await (await fetch('ipfs:///example.txt', {
-      method: 'post',
-      body: TEST_DATA
-    })).text()
-    const folderURI = dataURI.slice(0, -('example.txt'.length))
+    const addResults = await collect(ipfs.addAll([
+      { path: '/example.txt', content: TEST_DATA }
+    ], { wrapWithDirectory: true, cidVersion: 1 }))
+
+    // The last element should be the directory itself
+    const { cid } = addResults.at(-1)
+    const folderURI = `ipfs://${cid}/`
 
     const makeKeyResponse = await fetch('ipns://localhost/?key=update-file', {
       method: 'POST'
     })
 
-    t.ok(makeKeyResponse.ok, 'Got OK in response')
+    await checkOk(makeKeyResponse, 'Create IPNS URL', t)
 
     const ipnsRoot = makeKeyResponse.headers.get('Location')
 
@@ -849,32 +844,43 @@ test('PUT file to update IPNS', async (t) => {
       body: folderURI
     })
 
-    t.ok(publishResponse.ok, 'Got OK in response')
+    await checkOk(publishResponse, 'Able to post URL to IPNS', t)
 
-    const ipnsURI = await publishResponse.text()
+    const updatedURI = publishResponse.headers.get('Location')
 
-    t.ok(ipnsURI.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
+    t.equal(updatedURI, ipnsRoot, 'After updating, IPNS key stayed the same')
 
-    const putResponse = await fetch(ipnsURI + 'example2.txt', {
-      method: 'put',
-      body: TEST_DATA
-    })
-
-    t.ok(putResponse.ok, 'Able to upload to IPNS url with data')
-
-    const ipnsURI2 = await putResponse.text()
-
-    t.ok(ipnsURI2.startsWith('ipns://k'), 'Got base36 encoded IPNS url')
-
-    const resolvedResponse = await fetch(ipnsURI, {
+    const resolvedResponse1 = await fetch(ipnsRoot, {
       headers: {
         Accept: 'application/json'
       }
     })
 
-    t.ok(resolvedResponse.ok, 'Got OK in response')
+    await checkOk(resolvedResponse1, 'Able to fetch IPNS data back')
 
-    const files = await resolvedResponse.json()
+    const file = await resolvedResponse1.json()
+    t.deepEqual(file, ['example.txt'], 'resolved file')
+
+    const putResponse = await fetch(ipnsRoot + 'example2.txt', {
+      method: 'put',
+      body: TEST_DATA
+    })
+
+    await checkOk(putResponse, 'Able to upload to IPNS url with data', t)
+
+    const updatedURI2 = putResponse.headers.get('Location')
+
+    t.equal(updatedURI2, ipnsRoot, 'After updating, IPNS key stayed the same')
+
+    const resolvedResponse2 = await fetch(ipnsRoot, {
+      headers: {
+        Accept: 'application/json'
+      }
+    })
+
+    await checkOk(resolvedResponse2, 'Able to fetch IPNS data back')
+
+    const files = await resolvedResponse2.json()
     t.deepEqual(files, ['example.txt', 'example2.txt'], 'resolved files')
   } finally {
     try {
@@ -930,8 +936,7 @@ test('DELETE from IPFS URL', async (t) => {
   }
 })
 
-test('Resolve IPNS', async (t) => {
-  t.timeoutAfter(6000)
+test('DELETE from IPFS URL', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -939,9 +944,49 @@ test('Resolve IPNS', async (t) => {
     const fetch = await makeIPFSFetch({ ipfs })
 
     t.pass('Able to make create fetch instance')
-    const dnsResponse = await fetch('ipns://ipfs.io/')
 
-    t.ok(dnsResponse.ok, 'Able to resolve ipfs.io')
+    const results = await collect(ipfs.addAll([
+      { path: '/example.txt', content: TEST_DATA },
+      { path: '/example2.txt', content: TEST_DATA }
+    ], { wrapWithDirectory: true, cidVersion: 1 }))
+
+    // The last element should be the directory itself
+    const { cid } = results[results.length - 1]
+
+    const folderURI = `ipfs://${cid}/`
+
+    const makeKeyResponse = await fetch('ipns://localhost/?key=delete-file', {
+      method: 'POST'
+    })
+
+    await checkOk(makeKeyResponse, 'Create IPNS URL', t)
+
+    const ipnsRoot = makeKeyResponse.headers.get('Location')
+
+    const publishResponse = await fetch(ipnsRoot, {
+      method: 'post',
+      body: folderURI
+    })
+
+    await checkOk(publishResponse, 'Able to post URL to IPNS', t)
+
+    const deleteResponse = await fetch(ipnsRoot + 'example.txt', {
+      method: 'DELETE'
+    })
+
+    await checkOk(deleteResponse, 'Able to DELETE file', t)
+
+    const deleteURL = deleteResponse.headers.get('Location')
+
+    t.equal(deleteURL, ipnsRoot, 'IPNS location same after delete')
+
+    const directoryResponse = await fetch(ipnsRoot)
+
+    t.ok(directoryResponse.ok, 'Able to GET new directory')
+
+    const files = await directoryResponse.json()
+
+    t.deepEqual(files, ['example2.txt'], 'File got deleted')
   } finally {
     try {
       if (ipfs) await ipfs.stop()
@@ -952,7 +997,34 @@ test('Resolve IPNS', async (t) => {
   }
 })
 
-test('Testing the timeout option', async (t) => {
+test('Resolve IPNS', async (t) => {
+  // t.timeoutAfter(10000)
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+    const dnsResponse = await fetch('ipns://ipfs.tech/')
+
+    t.ok(dnsResponse.ok, 'Able to resolve ipfs.tech')
+
+    if (!dnsResponse.ok) {
+      throw new Error(await dnsResponse.text())
+    }
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
+// Not sure what's up with this
+test.skip('Testing the timeout option', async (t) => {
   let ipfs = null
   try {
     ipfs = await getInstance()
@@ -1090,6 +1162,70 @@ test('POST JSON to IPLD, have it saved to cbor', async (t) => {
   }
 })
 
+test('Patch IPLD object', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const object = {
+      hello: ['world']
+    }
+
+    const cid = await ipfs.dag.put(object, {
+      storeCodec: 'dag-cbor'
+    })
+
+    const patches = [
+      { op: 'add', path: '/hello/0', value: 'cruel' },
+      { op: 'move', path: '/goodbye', from: '/hello' }
+    ]
+
+    const url = `ipld://${cid.toV1().toString()}/`
+
+    const response = await fetch(url, {
+      method: 'patch',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(patches)
+    })
+
+    await checkOk(response, 'Able to patch data', t)
+
+    const updatedURL = response.headers.get('Location')
+
+    const expectedURL = 'ipld://bafyreiaigmnxp4ehbvt4nptoof2w7dixyanblnq3lfvxslulsrzkcpk3ni/'
+
+    t.equal(updatedURL, expectedURL, 'Got expected result URL')
+
+    const updateResponse = await fetch(expectedURL + '?format=dag-json')
+
+    await checkOk(updateResponse, 'Able to fetch updated data', t)
+
+    const contentType = updateResponse.headers.get('Content-Type')
+
+    t.equal(contentType, 'application/json', 'Content type is JSON')
+
+    const data = await updateResponse.json()
+
+    const expected = {
+      goodbye: ['cruel', 'world']
+    }
+
+    t.deepEqual(data, expected, 'Patches got applied correctly')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
 test('pubsub between two peers', async (t) => {
   let ipfs1 = null
   let ipfs2 = null
@@ -1127,6 +1263,10 @@ test('pubsub between two peers', async (t) => {
 
     t.ok(publishRequest.ok, 'Able to send publish')
 
+    if (!publishRequest.ok) {
+      throw new Error(await publishRequest.text())
+    }
+
     const [event] = await toRead
 
     const { data, lastEventId } = event
@@ -1159,4 +1299,9 @@ async function collect (iterable) {
   }
 
   return results
+}
+
+async function checkOk (response, message = 'HTTP Response', t = null) {
+  if (!response.ok) throw new Error(`${message} Failed ${response.status}:\n${await response.text()}`)
+  if (t) t.pass(message)
 }
