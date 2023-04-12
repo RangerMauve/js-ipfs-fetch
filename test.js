@@ -936,6 +936,67 @@ test('DELETE from IPFS URL', async (t) => {
   }
 })
 
+test.only('DELETE from IPFS URL', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    t.pass('Able to make create fetch instance')
+
+    const results = await collect(ipfs.addAll([
+      { path: '/example.txt', content: TEST_DATA },
+      { path: '/example2.txt', content: TEST_DATA }
+    ], { wrapWithDirectory: true, cidVersion: 1 }))
+
+    // The last element should be the directory itself
+    const { cid } = results[results.length - 1]
+
+    const folderURI = `ipfs://${cid}/`
+
+    const makeKeyResponse = await fetch('ipns://localhost/?key=delete-file', {
+      method: 'POST'
+    })
+
+    await checkOk(makeKeyResponse, 'Create IPNS URL', t)
+
+    const ipnsRoot = makeKeyResponse.headers.get('Location')
+
+    const publishResponse = await fetch(ipnsRoot, {
+      method: 'post',
+      body: folderURI
+    })
+
+    await checkOk(publishResponse, 'Able to post URL to IPNS', t)
+
+    const deleteResponse = await fetch(ipnsRoot + 'example.txt', {
+      method: 'DELETE'
+    })
+
+    await checkOk(deleteResponse, 'Able to DELETE file', t)
+
+    const deleteURL = deleteResponse.headers.get('Location')
+
+    t.equal(deleteURL, ipnsRoot, 'IPNS location same after delete')
+
+    const directoryResponse = await fetch(ipnsRoot)
+
+    t.ok(directoryResponse.ok, 'Able to GET new directory')
+
+    const files = await directoryResponse.json()
+
+    t.deepEqual(files, ['example2.txt'], 'File got deleted')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
 test('Resolve IPNS', async (t) => {
   // t.timeoutAfter(10000)
   let ipfs = null

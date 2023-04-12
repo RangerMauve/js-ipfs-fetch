@@ -456,9 +456,15 @@ export default function makeIPFSFetch ({
       return deleteData(ipfsPath, signal)
     })
     router.delete('ipns://*/**', async ({ url, signal }) => {
-      let ipfsPath = urlToIPFSPath(url)
-      ipfsPath = await resolveIPNS(ipfsPath, signal)
-      return deleteData(ipfsPath, signal)
+      const { hostname: keyName } = new URL(url)
+
+      const ipnsPath = urlToIPNSPath(url)
+      const ipfsPath = await resolveIPNS(ipnsPath, signal)
+      const { body: updatedURL } = await deleteData(ipfsPath, signal)
+
+      const value = updatedURL.replace(/^ipfs:\/\//, '/ipfs/').replace(/^ipns:\/\//, '/ipns/')
+
+      return updateIPNS(keyName, value, signal)
     })
   }
 
