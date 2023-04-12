@@ -28,6 +28,15 @@ const EMPTY_DIR_IPFS_PATH = '/ipfs/bafyaabakaieac/'
 
 const MIME_JSON = 'application/json'
 
+const JSONCodec = {
+  decode (data) {
+    return JSON.parse(Buffer.from(data).toString('utf8'))
+  },
+  encode (data) {
+    return JSON.stringify(data)
+  }
+}
+
 const DEFAULT_HEADERS = {
   'Content-Type': 'text/plain; charset=utf-8'
 }
@@ -76,6 +85,29 @@ export default function makeIPFSFetch ({
     })
   }
 
+  function detectIPLDCodec (request) {
+    const { headers } = request
+    const contentType = headers.get('Content-Type')
+
+    let codec = cbor
+    let storeCodec = 'dag-cbor'
+
+    if (contentType === MIME_JSON) {
+      codec = JSONCodec
+      storeCodec = 'dag-json'
+    } else if (contentType === 'application/dag-json') {
+      codec = dagJSON
+      storeCodec = 'dag-json'
+    } else if (contentType === 'application/vnd.ipld.dag-cbor') {
+      codec = cbor
+      storeCodec = 'dag-cbor'
+    } else {
+      return null
+    }
+
+    return { codec, storeCodec }
+  }
+
   router.get('ipld://*/**', async ({ url, headers, signal }) => {
     const accept = headers.get('Accept')
     const format = new URL(url).searchParams.get('format')
@@ -103,42 +135,35 @@ export default function makeIPFSFetch ({
 
   if (writable) {
     router.post(`ipld://${SPECIAL_HOSTNAME}/**`, async (request) => {
-      const { headers, url, signal } = request
-      const contentType = headers.get('Content-Type')
+      const { url, signal } = request
       const format = new URL(url).searchParams.get('format')
 
       const data = await request.arrayBuffer()
 
-      let decoded = null
-      let storeCodec = cbor
+      const decoderInfo = detectIPLDCodec(request)
 
-      if (contentType === MIME_JSON) {
-        decoded = JSON.parse(Buffer.from(data).toString('utf8'))
-        storeCodec = 'dag-json'
-      } else if (contentType === 'application/dag-json') {
-        decoded = dagJSON.decode(data)
-        storeCodec = 'dag-json'
-      } else if (contentType === 'application/vnd.ipld.dag-cbor') {
-        decoded = cbor.decode(data)
-        storeCodec = 'dag-cbor'
-      } else {
+      if (!decoderInfo) {
         return {
           // TODO: better status?
           status: 400,
           headers: defaultHeaders,
-          body: 'Unsupproted content-type, must be dag-cbor, or dag-json'
+          body: 'Unsupproted content-type, must be dag-cbor, application/json, or dag-json'
         }
       }
+
+      const decoded = decoderInfo.codec.decode(data)
+
+      let { storeCodec } = decoderInfo
 
       if (format) {
         if (format === 'dag-json' || format === 'dag-cbor') {
           storeCodec = format
         } else {
           return {
-          // TODO: better status?
+            // TODO: better status?
             status: 400,
             headers: defaultHeaders,
-            body: 'Unsupproted format, must be dag-json or dag-cbor'
+            body: `Unsupported format, must be dag-json or dag-cbor. Got ${format}`
           }
         }
       }
@@ -152,8 +177,6 @@ export default function makeIPFSFetch ({
       const cidHash = cid.toV1().toString()
       const addedURL = `ipld://${cidHash}/`
 
-      headers.Location = addedURL
-
       return {
         status: 201,
         headers: {
@@ -161,6 +184,36 @@ export default function makeIPFSFetch ({
           Location: addedURL
         },
         body: addedURL
+      }
+    })
+
+    router.patch('ipld://*/**', async (request) => {
+      const { url } = request
+
+      const data = await request.arrayBuffer()
+
+      const decoderInfo = detectIPLDCodec(request)
+
+      if (!decoderInfo) {
+        return {
+          // TODO: better status?
+          status: 400,
+          headers: defaultHeaders,
+          body: 'Unsupproted content-type, must be dag-cbor, application/json, or dag-json'
+        }
+      }
+
+      const patches = decoderInfo.codec.decode(data)
+
+      const updatedURL = await ipldSystem.patch(url, patches)
+
+      return {
+        status: 201,
+        headers: {
+          ...defaultHeaders,
+          Location: updatedURL
+        },
+        body: updatedURL
       }
     })
   }

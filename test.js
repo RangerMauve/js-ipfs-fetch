@@ -1101,6 +1101,70 @@ test('POST JSON to IPLD, have it saved to cbor', async (t) => {
   }
 })
 
+test('Patch IPLD object', async (t) => {
+  let ipfs = null
+  try {
+    ipfs = await getInstance()
+
+    const fetch = await makeIPFSFetch({ ipfs })
+
+    const object = {
+      hello: ['world']
+    }
+
+    const cid = await ipfs.dag.put(object, {
+      storeCodec: 'dag-cbor'
+    })
+
+    const patches = [
+      { op: 'add', path: '/hello/0', value: 'cruel' },
+      { op: 'move', path: '/goodbye', from: '/hello' }
+    ]
+
+    const url = `ipld://${cid.toV1().toString()}/`
+
+    const response = await fetch(url, {
+      method: 'patch',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(patches)
+    })
+
+    await checkOk(response, 'Able to patch data', t)
+
+    const updatedURL = response.headers.get('Location')
+
+    const expectedURL = 'ipld://bafyreiaigmnxp4ehbvt4nptoof2w7dixyanblnq3lfvxslulsrzkcpk3ni/'
+
+    t.equal(updatedURL, expectedURL, 'Got expected result URL')
+
+    const updateResponse = await fetch(expectedURL + '?format=dag-json')
+
+    await checkOk(updateResponse, 'Able to fetch updated data', t)
+
+    const contentType = updateResponse.headers.get('Content-Type')
+
+    t.equal(contentType, 'application/json', 'Content type is JSON')
+
+    const data = await updateResponse.json()
+
+    const expected = {
+      goodbye: ['cruel', 'world']
+    }
+
+    t.deepEqual(data, expected, 'Patches got applied correctly')
+  } finally {
+    try {
+      if (ipfs) await ipfs.stop()
+    } catch (e) {
+      console.error('Could not stop', e)
+      // Whatever
+    }
+  }
+})
+
 test('pubsub between two peers', async (t) => {
   let ipfs1 = null
   let ipfs2 = null
