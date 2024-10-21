@@ -10,7 +10,7 @@ import { CID } from 'multiformats/cid'
 import { base32 } from 'multiformats/bases/base32'
 import { base36 } from 'multiformats/bases/base36'
 
-// Different from raw JSON. Determenistic
+// Different from raw JSON. Deterministic
 import * as dagJSON from '@ipld/dag-json'
 import * as cbor from '@ipld/dag-cbor'
 
@@ -147,7 +147,8 @@ export default function makeIPFSFetch ({
           // TODO: better status?
           status: 400,
           headers: defaultHeaders,
-          body: 'Unsupproted content-type, must be dag-cbor, application/json, or dag-json'
+          body:
+            'Unsupported content-type, must be dag-cbor, application/json, or dag-json'
         }
       }
 
@@ -199,7 +200,8 @@ export default function makeIPFSFetch ({
           // TODO: better status?
           status: 400,
           headers: defaultHeaders,
-          body: 'Unsupproted content-type, must be dag-cbor, application/json, or dag-json'
+          body:
+            'Unsupported content-type, must be dag-cbor, application/json, or dag-json'
         }
       }
 
@@ -284,7 +286,7 @@ export default function makeIPFSFetch ({
       const { url, signal } = request
       const topic = new URL(url).hostname
       const payload = await request.arrayBuffer()
-      // TODO: Handle oversized messages wihth 413
+      // TODO: Handle oversized messages with 413
       await ipfs.pubsub.publish(topic, payload, {
         signal,
         timeout
@@ -318,6 +320,7 @@ export default function makeIPFSFetch ({
         }
       }
     })
+
     // TODO: Generate from headers somehow
     router.post(`ipns://${SPECIAL_HOSTNAME}/`, async ({ url, signal }) => {
       const key = new URL(url).searchParams.get('key')
@@ -333,9 +336,11 @@ export default function makeIPFSFetch ({
         status: 201,
         headers: {
           Location: keyURL
-        }
+        },
+        body: keyURL
       }
     })
+
     router.delete(`ipns://${SPECIAL_HOSTNAME}/`, async ({ url, signal }) => {
       const key = new URL(url).searchParams.get('key')
       await ipfs.key.rm(key, {
@@ -417,7 +422,7 @@ export default function makeIPFSFetch ({
       const contentType = headers.get('Content-Type') || ''
       const isFormData = contentType.includes('multipart/form-data')
 
-      const ipnsPath = urlToIPFSPath(url)
+      const ipnsPath = urlToIPNSPath(url)
       const split = ipnsPath.split('/')
       const keyName = split[2]
       const subpath = split.slice(3).join('/')
@@ -445,7 +450,9 @@ export default function makeIPFSFetch ({
       const { hostname: keyName } = new URL(url)
 
       const rawValue = await request.text()
-      const value = rawValue.replace(/^ipfs:\/\//, '/ipfs/').replace(/^ipns:\/\//, '/ipns/')
+      const value = rawValue
+        .replace(/^ipfs:\/\//, '/ipfs/')
+        .replace(/^ipns:\/\//, '/ipns/')
 
       return updateIPNS(keyName, value, signal)
     })
@@ -462,7 +469,9 @@ export default function makeIPFSFetch ({
       const ipfsPath = await resolveIPNS(ipnsPath, signal)
       const { body: updatedURL } = await deleteData(ipfsPath, signal)
 
-      const value = updatedURL.replace(/^ipfs:\/\//, '/ipfs/').replace(/^ipns:\/\//, '/ipns/')
+      const value = updatedURL
+        .replace(/^ipfs:\/\//, '/ipfs/')
+        .replace(/^ipns:\/\//, '/ipns/')
 
       return updateIPNS(keyName, value, signal)
     })
@@ -505,24 +514,30 @@ export default function makeIPFSFetch ({
     const accept = reqHeaders.get('Accept') || ''
     const expectedType = format || accept
 
-    const headers = { ...defaultHeaders }
+    const headersResponse = { ...defaultHeaders }
 
-    if (expectedType === 'raw' || expectedType === 'application/vnd.ipld.raw') {
+    if (
+      expectedType === 'raw' ||
+      expectedType === 'application/vnd.ipld.raw'
+    ) {
       const body = await ipfs.block.get(ipfsPath, {
         timeout,
         signal
       })
 
-      headers['Content-Type'] = 'application/vnd.ipld.raw'
+      headersResponse['Content-Type'] = 'application/vnd.ipld.raw'
 
       return {
         status: 200,
-        headers,
+        headers: headersResponse,
         body
       }
     }
 
-    if (expectedType === 'car' || expectedType === 'application/vnd.ipld.car') {
+    if (
+      expectedType === 'car' ||
+      expectedType === 'application/vnd.ipld.car'
+    ) {
       const { cid } = await ipfs.dag.resolve(ipfsPath, {
         timeout,
         signal
@@ -533,11 +548,11 @@ export default function makeIPFSFetch ({
         signal
       })
 
-      headers['Content-Type'] = 'application/vnd.ipld.car'
+      headersResponse['Content-Type'] = 'application/vnd.ipld.car'
 
       return {
         status: 200,
-        headers,
+        headers: headersResponse,
         body
       }
     }
@@ -551,34 +566,49 @@ export default function makeIPFSFetch ({
 
       try {
         const stats = await collect(ipfs.ls(ipfsPath, { signal, timeout }))
-        const files = stats.map(({ name, type }) => (type === 'dir') ? `${name}/` : name)
+        // Decode path segments for accurate file names
+        const files = stats.map(({ name, type }) =>
+          type === 'dir' ? `${decodeURIComponent(name)}/` : decodeURIComponent(name)
+        )
 
         if (files.includes('index.html')) {
           if (!searchParams.has('noResolve')) {
-            return serveFile(posixPath.join(ipfsPath, 'index.html'), searchParams, reqHeaders, headers, signal)
+            return serveFile(
+              posixPath.join(ipfsPath, 'index.html'),
+              searchParams,
+              reqHeaders,
+              headersResponse,
+              signal
+            )
           }
         }
 
         if (accept.includes('text/html')) {
-          const page = await renderIndex(url, files, fetch)
-          headers['Content-Type'] = 'text/html; charset=utf-8'
+          // Encode file names to handle spaces and special characters
+          const encodedFiles = files.map((file) =>
+            file.endsWith('/')
+              ? `${encodeURIComponent(file.slice(0, -1))}/`
+              : encodeURIComponent(file)
+          )
+          const page = await renderIndex(url, encodedFiles, fetch)
+          headersResponse['Content-Type'] = 'text/html; charset=utf-8'
           body = page
         } else {
           const json = JSON.stringify(files, null, '\t')
-          headers['Content-Type'] = `${MIME_JSON}; charset=utf-8`
+          headersResponse['Content-Type'] = `${MIME_JSON}; charset=utf-8`
           body = json
         }
 
         return {
           status: 200,
-          headers,
+          headers: headersResponse,
           body
         }
       } catch {
-        return serveFile(ipfsPath, searchParams, reqHeaders, headers, signal)
+        return serveFile(ipfsPath, searchParams, reqHeaders, headersResponse, signal)
       }
     } else {
-      return serveFile(ipfsPath, searchParams, reqHeaders, headers, signal)
+      return serveFile(ipfsPath, searchParams, reqHeaders, headersResponse, signal)
     }
   }
 
@@ -590,11 +620,10 @@ export default function makeIPFSFetch ({
     if (stat.type === 'directory') {
       // TODO: Something for directories?
       if (!noResolve) {
-        const stats = await collect(ipfs.ls(ipfsPath, {
-          signal,
-          timeout
-        }))
-        const files = stats.map(({ name, type }) => (type === 'dir') ? `${name}/` : name)
+        const stats = await collect(ipfs.ls(ipfsPath, { signal, timeout }))
+        const files = stats.map(({ name, type }) =>
+          type === 'dir' ? `${decodeURIComponent(name)}/` : decodeURIComponent(name)
+        )
         if (files.includes('index.html')) {
           ipfsPath = posixPath.join(ipfsPath, 'index.html')
         } else {
@@ -636,7 +665,7 @@ export default function makeIPFSFetch ({
       const ranges = parseRange(size, isRanged)
       if (ranges && ranges.length && ranges.type === 'bytes') {
         const [{ start, end }] = ranges
-        const length = (end - start + 1)
+        const length = end - start + 1
         headers['Content-Length'] = `${length}`
         headers['Content-Range'] = `bytes ${start}-${end}/${size}`
         return {
@@ -731,7 +760,9 @@ export default function makeIPFSFetch ({
     return keys.find(({ name, id }) => {
       if (name === keyName) return true
       try {
-        return (CID.parse(id, bases).toV1().toString(base36) === keyName)
+        return (
+          CID.parse(id, bases).toV1().toString(base36) === keyName
+        )
       } catch {
         return false
       }
@@ -777,7 +808,7 @@ export default function makeIPFSFetch ({
     }
   }
 
-  async function uploadData (ipfsPath, response, isFormData, signal) {
+  async function uploadData (ipfsPath, request, isFormData, signal) {
     const tmpDir = makeTmpDir()
     const { rootCID, relativePath } = cidFromPath(ipfsPath)
 
@@ -791,16 +822,16 @@ export default function makeIPFSFetch ({
     }
 
     if (isFormData) {
-      const formData = await response.formData()
+      const formData = await request.formData()
       const toWait = []
 
       for (const [fieldName, fileData] of formData) {
-        // TODO: Should we filter by field name?
+        // Filter by field name if necessary
         if (fieldName !== 'file') continue
-        // Must not be a file
+        // Must have a filename
         if (!fileData.name) continue
         const fileName = fileData.name
-        const finalPath = posixPath.join(tmpDir, relativePath, fileName)
+        const finalPath = posixPath.join(tmpDir, relativePath, encodeURIComponent(fileName))
         const result = ipfs.files.write(finalPath, fileData, {
           cidVersion: 1,
           parents: true,
@@ -815,9 +846,12 @@ export default function makeIPFSFetch ({
 
       await Promise.all(toWait)
     } else {
-      const path = posixPath.join(tmpDir, ensureStartingSlash(stripEndingSlash(relativePath)))
+      const path = posixPath.join(
+        tmpDir,
+        ensureStartingSlash(stripEndingSlash(relativePath))
+      )
 
-      await ipfs.files.write(path, await response.blob(), {
+      await ipfs.files.write(path, await request.blob(), {
         signal,
         parents: true,
         truncate: true,
@@ -832,7 +866,13 @@ export default function makeIPFSFetch ({
 
     const cidHash = cid.toString()
     const endPath = isFormData ? relativePath : stripEndingSlash(relativePath)
-    const addedURL = `ipfs://${cidHash}${ensureStartingSlash(endPath)}`
+    const encodedEndPath = isFormData
+      ? relativePath
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/')
+      : encodeURIComponent(endPath)
+    const addedURL = `ipfs://${cidHash}${ensureStartingSlash(encodedEndPath)}`
 
     return addedURL
   }
@@ -909,9 +949,24 @@ function keyToURL ({ id }) {
 
 function urlToIPFSPath (url) {
   const { pathname, hostname } = new URL(url)
-  return `/ipfs/${hostname}${pathname}`
+  const decodedPathSegments = pathname
+    .split('/')
+    .filter(Boolean)
+    .map((part) => decodeURIComponent(part))
+  const encodedPathSegments = decodedPathSegments.map((part) =>
+    encodeURIComponent(part)
+  )
+  return `/ipfs/${hostname}/${encodedPathSegments.join('/')}`
 }
+
 function urlToIPNSPath (url) {
   const { pathname, hostname } = new URL(url)
-  return `/ipns/${hostname}${pathname}`
+  const decodedPathSegments = pathname
+    .split('/')
+    .filter(Boolean)
+    .map((part) => decodeURIComponent(part))
+  const encodedPathSegments = decodedPathSegments.map((part) =>
+    encodeURIComponent(part)
+  )
+  return `/ipns/${hostname}/${encodedPathSegments.join('/')}`
 }
