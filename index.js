@@ -352,12 +352,14 @@ export default function makeIPFSFetch ({
     router.delete(`ipns://${SPECIAL_HOSTNAME}/`, async ({ url, signal }) => {
       const key = new URL(url).searchParams.get('key')
 
-      await updateIPNS(key, EMPTY_DIR_IPFS_PATH, signal)
+      const {body:keyURL} = await updateIPNS(key, EMPTY_DIR_IPFS_PATH, signal)
 
       await ipfs.key.rm(key, {
         signal,
         timeout
       })
+
+      onDelete(new URL(keyURL))
 
       return {
         status: 200
@@ -378,6 +380,7 @@ export default function makeIPFSFetch ({
 
           const cidHash = cid.toString()
           const addedURL = `ipfs://${cidHash}/`
+          onLoad(new URL(addedURL), false)
 
           results.push(addedURL)
         }
@@ -396,6 +399,8 @@ export default function makeIPFSFetch ({
 
       const cidHash = cid.toString()
       const addedURL = `ipfs://${cidHash}/`
+
+      onLoad(new URL(addedURL), false)
 
       return {
         status: 201,
@@ -416,6 +421,7 @@ export default function makeIPFSFetch ({
       const ipfsPath = urlToIPFSPath(url)
 
       const addedURL = await uploadData(ipfsPath, request, isFormData, signal)
+      onLoad(new URL('/', addedURL), false)
 
       return {
         status: 201,
@@ -515,6 +521,7 @@ export default function makeIPFSFetch ({
   })
   router.get('ipns://*/**', async ({ url, signal, headers }) => {
     const { searchParams } = new URL(url)
+    onLoad(new URL('/', url), false)
     let ipfsPath = urlToIPNSPath(url)
     ipfsPath = await resolveIPNS(ipfsPath, signal)
     return serveGet(url, ipfsPath, searchParams, headers, signal)
@@ -538,6 +545,7 @@ export default function makeIPFSFetch ({
 
       headersResponse['Content-Type'] = 'application/vnd.ipld.raw'
 
+      onLoad(new URL('/', url), false)
       return {
         status: 200,
         headers: headersResponse,
@@ -710,6 +718,7 @@ export default function makeIPFSFetch ({
   async function resolveIPNS (path, signal) {
     const segments = ensureStartingSlash(path).split(/\/+/)
     let mainSegment = segments[2]
+    let writable = false
 
     if (!mainSegment.includes('.')) {
       const keys = await ipfs.key.list({ signal, timeout: ipnsTimeout })
@@ -721,6 +730,7 @@ export default function makeIPFSFetch ({
 
     const toResolve = `/ipns${ensureEndingSlash(ensureStartingSlash(mainSegment))}`
     const resolved = await ipfs.resolve(toResolve, { signal, timeout: ipnsTimeout })
+    onLoad(new URL(`ipns://${mainSegment}`), writable)
     return [resolved, ...segments.slice(3)].join('/')
   }
 
@@ -742,6 +752,8 @@ export default function makeIPFSFetch ({
 
     const ipnsURL = `ipns://${cid}/`
 
+    onLoad(new URL(ipnsURL), writable, finalName)
+
     return {
       status: 201,
       headers: {
@@ -760,7 +772,9 @@ export default function makeIPFSFetch ({
       timeout: ipnsTimeout
     })
 
-    await updateIPNS(keyName, EMPTY_DIR_IPFS_PATH, signal)
+    const {body: url} = await updateIPNS(keyName, EMPTY_DIR_IPFS_PATH, signal)
+    onLoad(new URL(url), true, keyName)
+    return url
   }
 
   async function hasKey (keyName, signal) {

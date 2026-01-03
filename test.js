@@ -26,7 +26,7 @@ const factory = Ctl.createFactory({
   remote: false,
   ipfsHttpModule,
   ipfsBin,
-  args: '--enable-namesys-pubsub'
+  args: ['--enable-namesys-pubsub']
 })
 
 test.onFinish(async () => {
