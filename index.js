@@ -61,6 +61,12 @@ async function DEFAULT_RENDER_INDEX (url, files, fetch) {
 `
 }
 
+function noop(){}
+
+/**
+ * @param {object} options
+ * @returns {typeof globalThis.fetch}
+ */
 export default function makeIPFSFetch ({
   ipfs,
   timeout = IPFS_TIMEOUT,
@@ -68,7 +74,9 @@ export default function makeIPFSFetch ({
   onNotFound = DEFAULT_ON_NOT_FOUND,
   renderIndex = DEFAULT_RENDER_INDEX,
   defaultHeaders = DEFAULT_HEADERS,
-  writable = true
+  writable = true,
+  onLoad = noop,
+  onDelete = noop
 }) {
   const { router, fetch } = makeRoutedFetch({
     onNotFound
@@ -343,6 +351,9 @@ export default function makeIPFSFetch ({
 
     router.delete(`ipns://${SPECIAL_HOSTNAME}/`, async ({ url, signal }) => {
       const key = new URL(url).searchParams.get('key')
+
+      await updateIPNS(key, EMPTY_DIR_IPFS_PATH, signal)
+
       await ipfs.key.rm(key, {
         signal,
         timeout
@@ -663,7 +674,8 @@ export default function makeIPFSFetch ({
 
     if (isRanged) {
       const ranges = parseRange(size, isRanged)
-      if (ranges && ranges.length && ranges.type === 'bytes') {
+      const isRangeValid = ranges !== -1 && ranges !== -2 && ranges
+      if (isRangeValid && ranges && ranges.length && ranges.type === 'bytes') {
         const [{ start, end }] = ranges
         const length = end - start + 1
         headers['Content-Length'] = `${length}`
